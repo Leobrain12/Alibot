@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alibot — сервис ремонта</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root{
+      --bg:#f5f6f8; --card:#fff; --text:#1e2430; --muted:#6f7785; --border:#dfe3e8;
+      --accent:#2f6fed; --accent-soft:#eaf1ff; --green:#208a4e; --green-soft:#eaf8f0;
+      --orange:#b56a00; --orange-soft:#fff4df; --red:#b42318; --red-soft:#fdecea;
+      --purple:#6f42c1; --purple-soft:#f2edff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    .app{max-width:1180px;margin:0 auto;padding:18px}
+    .topbar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap}
+    .brand{font-weight:700}
+    .btn{border:1px solid var(--border);background:#fff;color:var(--text);padding:9px 13px;border-radius:10px}
+    .btn:hover{background:#f8f9fb}
+    .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .btn.danger{color:var(--red);border-color:#f0b7b2}
+    .layout{display:grid;grid-template-columns:220px 1fr;gap:16px}
+    .sidebar{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:10px;height:max-content}
+    .nav-btn{display:block;width:100%;text-align:left;border:0;background:transparent;padding:11px 12px;border-radius:9px;color:var(--text);margin:2px 0}
+    .nav-btn.active{background:var(--accent-soft);color:#184bba;font-weight:600}
+    .main{min-width:0}
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px}
+    .panel h2,.panel h3{margin:0 0 12px}
+    .muted{color:var(--muted)}
+    .toolbar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px}
+    .field{display:flex;flex-direction:column;gap:5px}
+    .field label{font-size:13px;color:var(--muted)}
+    input,select,textarea{width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:#fff;color:var(--text)}
+    textarea{min-height:88px;resize:vertical}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .order-card{border:1px solid var(--border);border-radius:12px;padding:14px;margin:10px 0}
+    .row{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+    .status{display:inline-block;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:600}
+    .s-new{background:var(--accent-soft);color:#184bba}
+    .s-assigned,.s-accepted{background:var(--purple-soft);color:#5d2daa}
+    .s-way,.s-arrived,.s-diag,.s-progress{background:var(--orange-soft);color:#8b5200}
+    .s-wait{background:#fff2cc;color:#7a5a00}
+    .s-done,.s-paid{background:var(--green-soft);color:var(--green)}
+    .s-cancel{background:var(--red-soft);color:var(--red)}
+    .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}
+    .metric{border:1px solid var(--border);border-radius:12px;padding:12px}
+    .metric .v{font-size:22px;font-weight:700;margin-top:4px}
+    .section-title{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:18px 0 8px}
+    .empty{padding:32px;text-align:center;color:var(--muted)}
+    .notice{padding:10px 12px;border-radius:10px;background:var(--accent-soft);color:#184bba;margin:10px 0}
+    .error{padding:10px 12px;border-radius:10px;background:var(--red-soft);color:var(--red);margin:10px 0}
+    .media-box{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .media-item{aspect-ratio:1;background:#eef1f4;border:1px dashed #c8ced7;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px}
+    .media-item img,.media-item video{width:100%;height:100%;object-fit:cover}
+    .sticky-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .timeline{border-left:2px solid var(--border);margin-left:6px;padding-left:14px}
+    .timeline-row{padding:8px 0}
+    .timeline-row:not(:last-child){border-bottom:1px dashed var(--border)}
+    @media(max-width:800px){
+      .layout{grid-template-columns:1fr}
+      .sidebar{display:flex;overflow:auto;gap:4px}
+      .nav-btn{width:auto;white-space:nowrap}
+      .grid,.metric-grid{grid-template-columns:1fr}
+      .media-box{grid-template-columns:repeat(2,1fr)}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div>
+      <div class="brand">Alibot — сервис ремонта</div>
+      <div class="muted" id="roleCaption">Загрузка…</div>
+    </div>
+  </div>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main" id="main"></main>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+const initData = tg ? tg.initData : '';
+
+const state = { role:null, masterId:null, screen:'active', selectedOrderId:null, notice:'', catalog:null, formAction:null, selectedMasterId:null, newUserId:null, editUserId:null, usersCache:null };
+
+const statusLabel = {
+  NEW:'Новый',ASSIGNED:'Назначен',ACCEPTED:'Принят',ON_THE_WAY:'В пути',ARRIVED:'На месте',
+  DIAGNOSTICS:'Диагностика',PRICE_APPROVAL:'Согласование цены',IN_PROGRESS:'В работе',
+  WAITING_PART:'Нужна деталь',COMPLETED:'Выполнен',PAID:'Оплачен',
+  MASTER_DECLINED:'Отказ мастера',RESCHEDULED:'Перенесён',CUSTOMER_CANCELLED:'Клиент отказался',
+  NO_CONTACT:'Недозвон',UNREPAIRABLE:'Не ремонтируется',CANCELLED:'Отменён',WARRANTY_RETURN:'Гарантия'
+};
+// Единственное место экранирования во всём файле — весь рендер идёт через innerHTML,
+// а часть полей (комментарий к отказу/переносу/отмене, имя клиента/мастера, справочники) —
+// свободный текст, который вводит MASTER или ADMIN и который потом видит ADMIN/SUPERADMIN
+// в другой сессии: без экранирования это хранимый XSS через пониженную-к-повышенной роль.
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// Совпадает с Master.isAssignable() на бэкенде (ТЗ п.8.1) — active сам по себе недостаточен,
+// VACATION/DISABLED тоже active=true, просто временно недоступны для назначения. Раньше здесь
+// фильтровалось только по active, и такого мастера можно было выбрать в форме — с отказом
+// уже на сервере вместо того, чтобы просто не показывать недоступный вариант.
+function isAssignableMaster(m){
+  return m.active && (m.status==='ACTIVE' || m.status==='DAY_OFF');
+}
+function statusClass(s){
+  if(s==='NEW') return 's-new';
+  if(['ASSIGNED','ACCEPTED'].includes(s)) return 's-assigned';
+  if(['ON_THE_WAY','ARRIVED','DIAGNOSTICS','PRICE_APPROVAL','IN_PROGRESS'].includes(s)) return 's-progress';
+  if(['WAITING_PART'].includes(s)) return 's-wait';
+  if(['COMPLETED','PAID'].includes(s)) return 's-done';
+  return 's-cancel';
+}
+
+async function api(path, opts={}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Content-Type':'application/json',
+      'Telegram-Init-Data': initData,
+      ...(opts.headers||{})
+    }
+  });
+  if (!res.ok) {
+    let msg = 'Ошибка ' + res.status;
+    try { const body = await res.json(); if (body.message) msg = body.message; } catch(e) {}
+    throw new Error(msg);
+  }
+  if (res.status === 204) return null;
+  const ct = res.headers.get('content-type')||'';
+  return ct.includes('application/json') ? res.json() : null;
+}
+
+function btn(label, screen){
+  return `<button class="nav-btn ${state.screen===screen?'active':''}" data-screen="${screen}">${label}</button>`;
+}
+function renderNav(){
+  const s = document.getElementById('sidebar');
+  if (state.role==='ADMIN' || state.role==='SUPERADMIN') {
+    const items = [btn('Активные','active'),btn('История','history'),btn('Нераспределённые','unassigned'),
+      btn('Лиды','leads'),btn('Создать заявку','create'),btn('Поиск','search'),btn('Мастера','masters'),btn('Статистика','stats')];
+    if (state.role==='SUPERADMIN') items.push(btn('Пользователи','users'), btn('Справочники','referenceItems'));
+    s.innerHTML = items.join('');
+  } else {
+    s.innerHTML = [btn('Активные','active'),btn('История','history'),btn('Статистика','stats')].join('');
+  }
+  s.querySelectorAll('[data-screen]').forEach(el=>el.addEventListener('click',()=>{state.screen=el.dataset.screen;state.notice='';render();}));
+}
+
+function orderCard(o){
+  return `<div class="order-card">
+    <div class="row">
+      <div><strong>#${o.number}</strong> <span class="status ${statusClass(o.status)}">${statusLabel[o.status]||o.status}</span></div>
+      <div class="muted">${o.visitDate} · ${o.timeFrom}–${o.timeTo}</div>
+    </div>
+    <div style="margin-top:8px"><strong>${esc(o.applianceType)}${o.brand?' · '+esc(o.brand):''}</strong></div>
+    <div class="muted">${esc(o.symptom)}</div>
+    <div style="margin-top:8px">${esc(o.customerName)} · ${esc(o.address)}</div>
+    <div class="muted">Мастер: ${esc(o.masterName)||'—'}</div>
+    <div style="margin-top:10px"><button class="btn" data-open="${o.id}">Открыть</button></div>
+  </div>`;
+}
+function bindOpenButtons(){
+  document.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>{
+    state.selectedOrderId = el.dataset.open; state.screen='order'; render();
+  }));
+}
+
+async function renderActive(){
+  const orders = await api('/api/v1/orders?view=active');
+  return `<div class="panel"><div class="row"><h2>Активные заказы</h2><span class="muted">${orders.length} записей</span></div>
+    ${orders.map(orderCard).join('')||'<div class="empty">Нет заказов</div>'}</div>`;
+}
+async function renderHistory(){
+  const orders = await api('/api/v1/orders?view=history');
+  return `<div class="panel"><h2>История</h2>${orders.map(orderCard).join('')||'<div class="empty">История пуста</div>'}</div>`;
+}
+async function renderUnassigned(){
+  const orders = await api('/api/v1/orders?view=unassigned');
+  return `<div class="panel"><h2>Нераспределённые</h2>${orders.map(orderCard).join('')||'<div class="empty">Нет нераспределённых заказов</div>'}</div>`;
+}
+async function renderMasters(){
+  const masters = await api('/api/v1/masters');
+  return `<div class="panel"><h2>Мастера</h2>${masters.map(m=>`
+    <div class="order-card"><div class="row"><div><strong>${esc(m.name)}</strong><div class="muted">${esc((m.applianceTypes||[]).join(', '))}</div></div>
+    <span class="status ${m.active?'s-done':'s-cancel'}">${m.status}</span></div>
+    <div style="margin-top:10px"><button class="btn" data-open-master="${m.id}">Открыть</button></div></div>`).join('')
+    || '<div class="empty">Мастеров нет</div>'}</div>`;
+}
+function bindOpenMasterButtons(){
+  document.querySelectorAll('[data-open-master]').forEach(el=>el.addEventListener('click',()=>{
+    state.selectedMasterId = el.dataset.openMaster; state.screen='masterDetail'; render();
+  }));
+}
+
+// ТЗ F8 — карточка мастера: специализация, гео, метрики, активные заказы, статус/деактивация (SUPERADMIN).
+async function renderMasterDetail(){
+  const m = await api('/api/v1/masters/'+state.selectedMasterId);
+  const s = await api('/api/v1/masters/'+state.selectedMasterId+'/stats');
+  const activeOrders = (await api('/api/v1/orders?view=active')).filter(o=>o.masterId===state.selectedMasterId);
+  const statusOptions = ['ACTIVE','DAY_OFF','VACATION','DISABLED']
+    .map(st=>`<option value="${st}" ${st===m.status?'selected':''}>${st}</option>`).join('');
+  return `<div class="panel"><div class="row"><h2>${esc(m.name)}</h2>
+      <button class="btn" data-nav="masters">← Мастера</button></div>
+    ${state.notice?`<div class="notice">${esc(state.notice)}</div>`:''}
+    <p><strong>Статус:</strong> ${m.status}${m.active?'':' (неактивен)'}</p>
+    <p><strong>Телефон:</strong> ${esc(m.phone)||'—'}</p>
+    <p><strong>Специализация:</strong> ${esc((m.applianceTypes||[]).join(', '))||'—'}</p>
+    <p><strong>Бренды:</strong> ${esc((m.brands||[]).join(', '))||'—'}</p>
+    <p><strong>География:</strong> ${esc((m.geoZones||[]).join(', '))||'—'}</p>
+    <div class="metric-grid">
+      <div class="metric"><div class="muted">Назначено</div><div class="v">${s.assignedOrders}</div></div>
+      <div class="metric"><div class="muted">Выполнено</div><div class="v">${s.completedOrders}</div></div>
+      <div class="metric"><div class="muted">Выручка</div><div class="v">${s.revenue} ₽</div></div>
+      <div class="metric"><div class="muted">Гарантийных</div><div class="v">${s.warrantyOrders}</div></div>
+    </div>
+    ${state.role==='SUPERADMIN' ? `
+    <div class="section-title">Управление</div>
+    <div class="field"><label>Статус мастера</label><select id="mStatusSel">${statusOptions}</select></div>
+    <div class="sticky-actions">
+      <button class="btn primary" data-submit-master-status="1">Сохранить статус</button>
+      <button class="btn ${m.active?'danger':''}" data-toggle-master-active="${!m.active}">${m.active?'Деактивировать':'Активировать'}</button>
+    </div>` : ''}
+    <div class="section-title">Активные заказы</div>
+    ${activeOrders.map(orderCard).join('') || '<div class="empty">Нет активных заказов</div>'}
+  </div>`;
+}
+function bindMasterDetail(){
+  const id = state.selectedMasterId;
+  const submitStatus = document.querySelector('[data-submit-master-status]');
+  if (submitStatus) submitStatus.addEventListener('click', async ()=>{
+    try {
+      await api(`/api/v1/masters/${id}`,{method:'PATCH',body:JSON.stringify({status:document.getElementById('mStatusSel').value})});
+      state.notice='Статус сохранён'; render();
+    } catch(e){ alert(e.message); }
+  });
+  const toggleActive = document.querySelector('[data-toggle-master-active]');
+  if (toggleActive) toggleActive.addEventListener('click', async ()=>{
+    try {
+      await api(`/api/v1/masters/${id}`,{method:'PATCH',body:JSON.stringify({active: toggleActive.dataset.toggleMasterActive==='true'})});
+      state.notice='Готово'; render();
+    } catch(e){ alert(e.message); }
+  });
+}
+
+// --- Пользователи (только SUPERADMIN, ТЗ п.5.1/9) ---
+
+async function renderUsers(){
+  const users = await api('/api/v1/users');
+  state.usersCache = users; // чтобы форма редактирования не ходила в API за именем/телефоном заново
+  return `<div class="panel"><div class="row"><h2>Пользователи</h2>
+      <button class="btn primary" data-nav="createUser">Добавить пользователя</button></div>
+    ${state.notice?`<div class="notice">${esc(state.notice)}</div>`:''}
+    ${users.map(u=>`<div class="order-card"><div class="row">
+        <div><strong>${esc(u.name)}</strong><div class="muted">telegram_user_id: ${u.telegramUserId} · ${u.role}${u.phone?' · '+esc(u.phone):''}</div></div>
+        <span class="status ${u.active?'s-done':'s-cancel'}">${u.active?'Активен':'Неактивен'}</span></div>
+        <div class="sticky-actions">
+          <button class="btn" data-edit-user="${u.id}">Изменить</button>
+          <button class="btn" data-toggle-user="${u.id}" data-user-active="${!u.active}">${u.active?'Деактивировать':'Активировать'}</button>
+        </div>
+      </div>`).join('') || '<div class="empty">Пользователей нет</div>'}
+  </div>`;
+}
+function bindUsers(){
+  document.querySelectorAll('[data-toggle-user]').forEach(el=>el.addEventListener('click', async ()=>{
+    try {
+      await api(`/api/v1/users/${el.dataset.toggleUser}/active`,{method:'PATCH',body:JSON.stringify({active: el.dataset.userActive==='true'})});
+      state.notice='Готово'; render();
+    } catch(e){ alert(e.message); }
+  }));
+  document.querySelectorAll('[data-edit-user]').forEach(el=>el.addEventListener('click', ()=>{
+    state.editUserId = el.dataset.editUser; state.screen='editUser'; render();
+  }));
+}
+
+async function renderEditUser(){
+  const u = (state.usersCache||[]).find(x=>x.id===state.editUserId) || await api('/api/v1/users/'+state.editUserId).catch(()=>null);
+  return `<div class="panel"><div class="row"><h2>Изменить пользователя</h2>
+      <button class="btn" data-nav="users">← Пользователи</button></div>
+    <div class="muted">telegram_user_id: ${u?.telegramUserId ?? '—'} · ${u?.role ?? ''}</div>
+    <div class="field"><label>Имя</label><input id="euName" value="${esc(u?.name)}"></div>
+    <div class="field"><label>Телефон</label><input id="euPhone" value="${esc(u?.phone)}"></div>
+    <div class="sticky-actions"><button class="btn primary" data-submit-edit-user="1">Сохранить</button></div>
+  </div>`;
+}
+function bindEditUser(){
+  const btn = document.querySelector('[data-submit-edit-user]');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    try {
+      await api(`/api/v1/users/${state.editUserId}`,{method:'PATCH',body:JSON.stringify({
+        name: document.getElementById('euName').value.trim(),
+        phone: document.getElementById('euPhone').value.trim()
+      })});
+      state.editUserId=null; state.screen='users'; state.notice='Изменения сохранены'; render();
+    } catch(e){ alert(e.message); }
+  });
+}
+
+async function renderCreateUser(){
+  return `<div class="panel"><div class="row"><h2>Добавить пользователя</h2>
+      <button class="btn" data-nav="users">← Пользователи</button></div>
+    <div class="field"><label>Telegram user id *</label><input id="uTelegramId" type="number" min="1" step="1" placeholder="Узнать можно у @userinfobot"></div>
+    <div class="field"><label>Имя *</label><input id="uName"></div>
+    <div class="field"><label>Телефон</label><input id="uPhone"></div>
+    <div class="field"><label>Роль *</label><select id="uRole"><option value="ADMIN">ADMIN</option><option value="MASTER">MASTER</option><option value="SUPERADMIN">SUPERADMIN</option></select></div>
+    <div class="sticky-actions"><button class="btn primary" data-submit-user="1">Создать</button></div>
+  </div>`;
+}
+function bindCreateUser(){
+  const btn = document.querySelector('[data-submit-user]');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    const telegramUserId = Number(document.getElementById('uTelegramId').value);
+    const name = document.getElementById('uName').value.trim();
+    if (!telegramUserId || !name) { alert('Заполните telegram_user_id и имя'); return; }
+    try {
+      const user = await api('/api/v1/users', {method:'POST', body: JSON.stringify({
+        telegramUserId, name, phone: document.getElementById('uPhone').value.trim()||null,
+        role: document.getElementById('uRole').value
+      })});
+      if (user.role==='MASTER') {
+        state.newUserId = user.id; state.screen='createMasterProfile'; render();
+      } else {
+        state.screen='users'; state.notice='Пользователь создан'; render();
+      }
+    } catch(e){ alert(e.message); }
+  });
+}
+
+async function renderCreateMasterProfile(){
+  return `<div class="panel"><h2>Профиль мастера</h2>
+    <div class="notice">Пользователь с ролью MASTER создан — заполните профиль мастера, чтобы его можно было назначать на заказы.</div>
+    <div class="field"><label>Имя мастера *</label><input id="mpName"></div>
+    <div class="field"><label>Телефон</label><input id="mpPhone"></div>
+    <div class="field"><label>Тип выплаты</label><select id="mpCommType">
+      <option value="MANUAL">Вручную на каждом заказе</option><option value="FIXED">Фиксированная сумма</option><option value="PERCENT">Процент от суммы заказа</option>
+    </select></div>
+    <div class="field"><label>Значение (сумма или %)</label><input id="mpCommValue" type="number" min="0"></div>
+    <div class="sticky-actions"><button class="btn primary" data-submit-master-profile="1">Сохранить</button></div>
+  </div>`;
+}
+function bindCreateMasterProfile(){
+  const btn = document.querySelector('[data-submit-master-profile]');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    const name = document.getElementById('mpName').value.trim();
+    if (!name) { alert('Укажите имя мастера'); return; }
+    try {
+      await api(`/api/v1/users/${state.newUserId}/master-profile`, {method:'POST', body: JSON.stringify({
+        name, phone: document.getElementById('mpPhone').value.trim()||null,
+        commissionType: document.getElementById('mpCommType').value,
+        commissionValue: document.getElementById('mpCommValue').value ? Number(document.getElementById('mpCommValue').value) : null
+      })});
+      state.newUserId=null; state.screen='masters'; state.notice='Мастер создан'; render();
+    } catch(e){ alert(e.message); }
+  });
+}
+// --- Справочники (только SUPERADMIN, ТЗ п.132) ---
+
+const REFERENCE_CATEGORY_LABELS = {
+  APPLIANCE_TYPE:'Типы техники', BRAND:'Бренды', TIME_SLOT:'Временные слоты',
+  MASTER_DECLINE_REASON:'Причины отказа мастера', CUSTOMER_CANCEL_REASON:'Причины отказа клиента',
+  RESCHEDULE_REASON:'Причины переноса'
+};
+async function renderReferenceItems(){
+  const items = await api('/api/v1/reference-items');
+  const categories = Object.keys(REFERENCE_CATEGORY_LABELS).filter(c=>items.some(i=>i.category===c));
+  return `<div class="panel"><h2>Справочники</h2>
+    ${state.notice?`<div class="notice">${esc(state.notice)}</div>`:''}
+    <p class="muted">Скрытый пункт не предлагается при создании новых заявок, но уже существующие заказы со старым значением не меняются.</p>
+    ${categories.map(cat=>`
+      <div class="section-title">${REFERENCE_CATEGORY_LABELS[cat]}</div>
+      ${items.filter(i=>i.category===cat).map(i=>`
+        <div class="order-card"><div class="row">
+          <div>${esc(i.value)}</div>
+          <span class="status ${i.active?'s-done':'s-cancel'}">${i.active?'Активен':'Скрыт'}</span>
+        </div>
+        <div class="sticky-actions">
+          <button class="btn" data-toggle-ref="${i.id}" data-ref-active="${!i.active}">${i.active?'Скрыть':'Показать'}</button>
+        </div></div>`).join('')}
+      <div class="toolbar">
+        <div class="field" style="flex:1"><input id="newRef_${cat}" placeholder="Новое значение"></div>
+        <button class="btn primary" data-add-ref="${cat}">Добавить</button>
+      </div>`).join('')}
+  </div>`;
+}
+function bindReferenceItems(){
+  document.querySelectorAll('[data-toggle-ref]').forEach(el=>el.addEventListener('click', async ()=>{
+    try {
+      await api(`/api/v1/reference-items/${el.dataset.toggleRef}`,{method:'PATCH',body:JSON.stringify({active: el.dataset.refActive==='true'})});
+      state.catalog = null; // форма создания заявки подхватит изменения при следующем открытии
+      state.notice='Готово'; render();
+    } catch(e){ alert(e.message); }
+  }));
+  document.querySelectorAll('[data-add-ref]').forEach(el=>el.addEventListener('click', async ()=>{
+    const category = el.dataset.addRef;
+    const input = document.getElementById('newRef_'+category);
+    const value = input.value.trim();
+    if (!value) return;
+    try {
+      await api('/api/v1/reference-items',{method:'POST',body:JSON.stringify({category, value})});
+      state.catalog = null;
+      state.notice='Добавлено'; render();
+    } catch(e){ alert(e.message); }
+  }));
+}
+
+// ТЗ п.73/76 — выбор периода. 'today'/'7d'/'30d' — пресеты, 'custom' — свои даты через два инпута.
+function statsPeriodRange(){
+  const now = new Date();
+  if (state.statsPeriod === 'custom') {
+    const from = state.statsCustomFrom ? new Date(state.statsCustomFrom+'T00:00:00Z') : now;
+    const to = state.statsCustomTo ? new Date(state.statsCustomTo+'T23:59:59Z') : now;
+    return {from: from.toISOString(), to: to.toISOString()};
+  }
+  const days = state.statsPeriod === '7d' ? 7 : state.statsPeriod === '30d' ? 30 : 0;
+  const from = new Date(now);
+  if (days === 0) { from.setUTCHours(0,0,0,0); } else { from.setTime(now.getTime() - days*86400000); }
+  return {from: from.toISOString(), to: now.toISOString()};
+}
+function statsPeriodBar(){
+  const periods = [['today','Сегодня'],['7d','7 дней'],['30d','30 дней'],['custom','Произвольный']];
+  const btns = periods.map(([key,label])=>
+    `<button class="btn ${state.statsPeriod===key?'primary':''}" data-stats-period="${key}">${label}</button>`).join('');
+  const customRow = state.statsPeriod==='custom' ? `
+    <div class="toolbar" style="margin-top:10px">
+      <div class="field"><label>С</label><input id="statsFrom" type="date" value="${esc(state.statsCustomFrom)}"></div>
+      <div class="field"><label>По</label><input id="statsTo" type="date" value="${esc(state.statsCustomTo)}"></div>
+      <button class="btn primary" id="statsCustomApply">Применить</button>
+    </div>` : '';
+  return `<div class="panel"><div class="toolbar" style="margin-bottom:0">${btns}</div>${customRow}</div>`;
+}
+function bindStatsPeriod(){
+  document.querySelectorAll('[data-stats-period]').forEach(el=>el.addEventListener('click',()=>{
+    state.statsPeriod = el.dataset.statsPeriod; render();
+  }));
+  const apply = document.getElementById('statsCustomApply');
+  if (apply) apply.addEventListener('click', ()=>{
+    state.statsCustomFrom = document.getElementById('statsFrom').value;
+    state.statsCustomTo = document.getElementById('statsTo').value;
+    render();
+  });
+}
+
+async function renderStats(){
+  if (!state.statsPeriod) state.statsPeriod = 'today';
+  const {from, to} = statsPeriodRange();
+  const q = '?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to);
+  const bar = statsPeriodBar();
+  if (state.role==='MASTER') {
+    const s = await api('/api/v1/masters/'+state.masterId+'/stats'+q);
+    return bar + statsBlock('Моя статистика', [
+      ['Назначено', s.assignedOrders],['Принято', s.acceptedOrders],['Выполнено', s.completedOrders],
+      ['Выручка', s.revenue+' ₽'],['Средний чек', s.avgCheck+' ₽'],['Гарантийных', s.warrantyOrders]]);
+  }
+  const s = await api('/api/v1/stats'+q);
+  return bar + statsBlock('Статистика', [
+    ['Заказов', s.ordersCreated],['Выполнено', s.completedOrders],['Выручка', s.revenue+' ₽'],
+    ['Средний чек', s.avgCheck+' ₽'],['Ожидают деталь', s.waitingPart],['Гарантийных', s.warrantyOrders],
+    ['Гарантийная доля', s.warrantyRate+'%'],['Затраты на гарантию', s.warrantyCost+' ₽']])
+    + exportBlock();
+}
+/** ТЗ п.80 — выгрузка заказов; период — тот же, что сейчас выбран в блоке статистики выше. */
+function exportBlock(){
+  return `<div class="panel"><h2>Экспорт заказов</h2>
+    <div class="muted" style="margin-bottom:8px">За выбранный период</div>
+    <div class="toolbar">
+      <button class="btn" id="exportCsvBtn">Скачать CSV</button>
+      <button class="btn" id="exportXlsxBtn">Скачать XLSX</button>
+    </div></div>`;
+}
+async function downloadExport(format){
+ try {
+  const {from, to} = statsPeriodRange();
+  const q = '&from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to);
+  const res = await fetch('/api/v1/orders/export?format='+format+q, {headers:{'Telegram-Init-Data': initData}});
+  if (!res.ok) { alert('Ошибка ' + res.status); return; }
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition')||'';
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const filename = match ? match[1] : ('orders.'+format);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+ } catch (e) { alert(e.message); }
+}
+function statsBlock(title, pairs){
+  return `<div class="panel"><h2>${title}</h2><div class="metric-grid">${pairs.map(([label,v])=>
+    `<div class="metric"><div class="muted">${label}</div><div class="v">${v}</div></div>`).join('')}</div></div>`;
+}
+
+async function renderSearch(){
+  const masters = await api('/api/v1/masters');
+  return `<div class="panel"><h2>Поиск заказов</h2>
+    <div class="toolbar">
+      <div class="field" style="flex:1"><label>Номер / телефон / имя / адрес</label><input id="searchInput"></div>
+      <div class="field"><label>Мастер</label><select id="searchMaster"><option value="">Все</option>
+        ${masters.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>Дата визита</label><input id="searchDate" type="date"></div>
+      <button class="btn primary" id="searchBtn">Найти</button>
+    </div>
+    <div id="searchResults" class="muted">Введите запрос или выберите мастера/дату.</div></div>`;
+}
+
+async function renderCreate(){
+  if (!state.catalog) state.catalog = await api('/api/v1/reference-data');
+  const masters = await api('/api/v1/masters');
+  const c = state.catalog;
+  return `<div class="panel"><h2>Создать заявку</h2>
+    <div class="grid">
+      <div class="field"><label>Имя клиента</label><input id="cName"></div>
+      <div class="field"><label>Телефон *</label><input id="cPhone"></div>
+      <div class="field"><label>Адрес *</label><input id="cAddress"></div>
+      <div class="field"><label>Дата *</label><input id="cDate" type="date"></div>
+      <div class="field"><label>Слот *</label><select id="cSlot">${c.timeSlots.map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>Тип техники *</label><select id="cType">${c.applianceTypes.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label>Бренд</label><select id="cBrand">${c.popularBrands.map(b=>`<option>${esc(b)}</option>`).join('')}</select></div>
+      <div class="field"><label>Модель</label><input id="cModel"></div>
+      <div class="field" style="grid-column:1/-1"><label>Проблема *</label><textarea id="cProblem"></textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Комментарий администратора</label><textarea id="cComment"></textarea></div>
+    </div>
+    <div class="section-title">Мастер</div>
+    <select id="cMaster"><option value="">Без мастера</option>${masters.filter(isAssignableMaster).map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select>
+    <div class="sticky-actions"><button class="btn primary" id="createBtn">Создать заявку</button></div>
+  </div>`;
+}
+
+// --- Лиды (ТЗ п.10-11) — сырые заявки с сайта/CRM, только ADMIN/SUPERADMIN ---
+
+async function renderLeads(){
+  const leads = await api('/api/v1/leads?view=pending');
+  return `<div class="panel"><h2>Лиды</h2>
+    ${state.notice?`<div class="notice">${esc(state.notice)}</div>`:''}
+    ${leads.map(l=>`<div class="order-card">
+        <div class="row"><strong>${esc(l.customerName)}</strong><span class="muted">${esc(l.customerPhone)}</span></div>
+        <div class="muted">${esc(l.applianceType)||'Тип техники не указан'}${l.source?' · источник: '+esc(l.source):''}</div>
+        ${l.comment?`<div style="margin-top:6px">${esc(l.comment)}</div>`:''}
+        <div class="sticky-actions">
+          <button class="btn primary" data-convert-lead="${l.id}">Конвертировать в заявку</button>
+          <button class="btn danger" data-reject-lead="${l.id}">Отклонить</button>
+        </div>
+      </div>`).join('') || '<div class="empty">Новых лидов нет</div>'}
+  </div>`;
+}
+function bindLeads(){
+  document.querySelectorAll('[data-convert-lead]').forEach(el=>el.addEventListener('click', ()=>{
+    state.convertingLeadId = el.dataset.convertLead; state.screen='leadConvert'; render();
+  }));
+  document.querySelectorAll('[data-reject-lead]').forEach(el=>el.addEventListener('click', ()=>{
+    state.rejectingLeadId = el.dataset.rejectLead; state.screen='leadReject'; render();
+  }));
+}
+
+async function renderLeadConvert(){
+  const leads = await api('/api/v1/leads?view=pending');
+  const lead = leads.find(l=>l.id===state.convertingLeadId);
+  if (!lead) { state.screen='leads'; state.notice='Лид уже обработан'; return renderLeads(); }
+  if (!state.catalog) state.catalog = await api('/api/v1/reference-data');
+  const masters = await api('/api/v1/masters');
+  const c = state.catalog;
+  return `<div class="panel"><div class="row"><h2>Конвертировать лид в заявку</h2>
+      <button class="btn" data-nav="leads">← Лиды</button></div>
+    <div class="grid">
+      <div class="field"><label>Имя клиента</label><input id="lcName" value="${esc(lead.customerName)}"></div>
+      <div class="field"><label>Телефон *</label><input id="lcPhone" value="${esc(lead.customerPhone)}"></div>
+      <div class="field"><label>Адрес *</label><input id="lcAddress"></div>
+      <div class="field"><label>Дата *</label><input id="lcDate" type="date"></div>
+      <div class="field"><label>Слот *</label><select id="lcSlot">${c.timeSlots.map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>Тип техники *</label><select id="lcType">${c.applianceTypes.map(t=>`<option ${t===lead.applianceType?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label>Бренд</label><select id="lcBrand">${c.popularBrands.map(b=>`<option>${esc(b)}</option>`).join('')}</select></div>
+      <div class="field"><label>Модель</label><input id="lcModel"></div>
+      <div class="field" style="grid-column:1/-1"><label>Проблема *</label><textarea id="lcProblem">${esc(lead.comment)}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label>Комментарий администратора</label><textarea id="lcComment"></textarea></div>
+    </div>
+    <div class="section-title">Мастер</div>
+    <select id="lcMaster"><option value="">Без мастера</option>${masters.filter(isAssignableMaster).map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select>
+    <div class="sticky-actions"><button class="btn primary" id="leadConvertBtn">Создать заявку из лида</button></div>
+  </div>`;
+}
+function bindLeadConvert(){
+  const btn = document.getElementById('leadConvertBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    try {
+      const order = await api(`/api/v1/leads/${state.convertingLeadId}/convert`, {method:'POST', body: JSON.stringify({
+        customerName: document.getElementById('lcName').value,
+        customerPhone: document.getElementById('lcPhone').value,
+        applianceType: document.getElementById('lcType').value,
+        brand: document.getElementById('lcBrand').value,
+        model: document.getElementById('lcModel').value,
+        symptom: document.getElementById('lcProblem').value,
+        description: null,
+        address: document.getElementById('lcAddress').value,
+        visitDate: document.getElementById('lcDate').value,
+        timeFrom: document.getElementById('lcSlot').value.split('-')[0],
+        timeTo: document.getElementById('lcSlot').value.split('-')[1],
+        masterId: document.getElementById('lcMaster').value || null,
+        adminComment: document.getElementById('lcComment').value,
+        leadId: null, crmId: null, source: null
+      })});
+      state.convertingLeadId = null; state.selectedOrderId = order.id; state.screen='order';
+      state.notice='Заявка создана из лида'; render();
+    } catch (e) { alert(e.message); }
+  });
+}
+
+async function renderLeadReject(){
+  return `<div class="panel"><div class="row"><h2>Отклонить лид</h2>
+      <button class="btn" data-nav="leads">← Лиды</button></div>
+    <div class="field"><label>Причина отклонения *</label><textarea id="leadRejectReason" placeholder="Спам, дубль, недозвон..."></textarea></div>
+    <div class="sticky-actions"><button class="btn danger" id="leadRejectBtn">Отклонить лид</button></div>
+  </div>`;
+}
+function bindLeadReject(){
+  const btn = document.getElementById('leadRejectBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async ()=>{
+    const reason = document.getElementById('leadRejectReason').value.trim();
+    if (!reason) { alert('Укажите причину'); return; }
+    try {
+      await api(`/api/v1/leads/${state.rejectingLeadId}/reject`, {method:'POST', body: JSON.stringify({reason})});
+      state.rejectingLeadId = null; state.screen='leads'; state.notice='Лид отклонён'; render();
+    } catch (e) { alert(e.message); }
+  });
+}
+
+async function renderOrder(){
+  const o = await api('/api/v1/orders/'+state.selectedOrderId);
+  const media = await api('/api/v1/orders/'+state.selectedOrderId+'/media');
+  const history = await api('/api/v1/orders/'+state.selectedOrderId+'/history');
+  const isAdmin = state.role==='ADMIN' || state.role==='SUPERADMIN';
+  return `<div class="panel">
+    <div class="row"><h2>Заказ #${o.number}</h2><span class="status ${statusClass(o.status)}">${statusLabel[o.status]||o.status}</span></div>
+    ${state.notice?`<div class="notice">${esc(state.notice)}</div>`:''}
+    <p><strong>${o.visitDate} · ${o.timeFrom}–${o.timeTo}</strong></p>
+    <p><strong>${esc(o.customerName)}</strong><br>${esc(o.customerPhone)}</p>
+    <p>${esc(o.address)}</p>
+    <p><strong>${esc(o.applianceType)}${o.brand?' · '+esc(o.brand):''}</strong> ${esc(o.model)}</p>
+    <p><strong>Проблема:</strong> ${esc(o.symptom)}</p>
+    ${o.adminComment?`<p><strong>Комментарий:</strong> ${esc(o.adminComment)}</p>`:''}
+    <p><strong>Мастер:</strong> ${esc(o.masterName)||'—'}</p>
+    ${o.finalPrice?`<p><strong>Итого: ${o.finalPrice} ₽</strong> (оплачено ${o.amountPaid||0} ₽, долг ${o.amountDue||0} ₽)</p>`:''}
+    <div class="sticky-actions">${actionButtons(o, isAdmin)}</div>
+    <div class="section-title">Медиа</div>
+    <div class="media-box">${media.map(m=>`<div class="media-item">${m.purged
+      ? 'Удалено по сроку хранения'
+      : (m.mediaType==='PHOTO' ? `<img src="${m.downloadUrl}" alt="">` : `<video src="${m.downloadUrl}" controls></video>`)
+      }</div>`).join('')||'<div class="muted">Нет медиа</div>'}</div>
+    <div class="section-title">История статусов</div>
+    <div class="timeline">${history.map(timelineRow).join('') || '<div class="muted">История пуста</div>'}</div>
+  </div>`;
+}
+function timelineRow(h){
+  const time = new Date(h.createdAt).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const transition = h.oldStatus ? `${statusLabel[h.oldStatus]||h.oldStatus} → ${statusLabel[h.newStatus]||h.newStatus}` : `${statusLabel[h.newStatus]||h.newStatus}`;
+  return `<div class="timeline-row">
+    <div class="row"><strong>${transition}</strong><span class="muted">${time}</span></div>
+    <div class="muted">${esc(h.changedByName)}${h.comment?' · '+esc(h.comment):''}</div>
+  </div>`;
+}
+
+// Действия без дополнительных полей — прямой вызов API (data-action).
+// Действия, требующие ввода данных, — переход на форму (data-form), см. renderActionForm.
+function actionButtons(o, isAdmin){
+  let out = [];
+  if (state.role==='MASTER') {
+    const s = o.status;
+    if (s==='ASSIGNED') out.push(a('Принять','accept'), f('Отказаться','decline','danger'));
+    else if (s==='ACCEPTED'||s==='RESCHEDULED') out.push(a('Выехал','onway'));
+    else if (s==='ON_THE_WAY') out.push(a('На месте','arrived'));
+    else if (s==='ARRIVED') out.push(a('Начать диагностику','diag'));
+    else if (s==='DIAGNOSTICS') out.push(f('Можно ремонтировать','repair'), f('Нужна деталь','part'), f('Ремонт нецелесообразен','unrep','danger'), f('Клиент отказался','custcancel','danger'));
+    else if (s==='PRICE_APPROVAL') out.push(a('Клиент согласовал','priceok'), f('Клиент отказался','pricecancel','danger'));
+    else if (s==='IN_PROGRESS') out.push(a('Завершить ремонт (в боте)','noop'));
+    else if (s==='WAITING_PART') out.push(a('Деталь пришла — выехал','repeatvisit'));
+  }
+  if (isAdmin && !['PAID','CANCELLED','CUSTOMER_CANCELLED','UNREPAIRABLE'].includes(o.status)) {
+    out.push(f('Сменить мастера','changemaster'), f('Перенести','reschedule'), f('Отменить','cancel','danger'));
+  }
+  if (isAdmin && o.status==='COMPLETED') out.push(a('Оплачено полностью','payfull'));
+  return out.join('');
+  function a(label, action, cls){ return `<button class="btn ${cls||''}" data-action="${action}">${label}</button>`; }
+  function f(label, action, cls){ return `<button class="btn ${cls||''}" data-form="${action}">${label}</button>`; }
+}
+
+function bindOrderActions(){
+  document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click', async ()=>{
+    const id = state.selectedOrderId;
+    const action = el.dataset.action;
+    if (action==='noop') { alert('Завершение ремонта с отчётом и медиа — через Telegram-бота (кнопка «Завершить ремонт»).'); return; }
+    try {
+      switch(action){
+        case 'accept': await api(`/api/v1/orders/${id}/transition`,{method:'POST',body:JSON.stringify({targetStatus:'ACCEPTED'})}); break;
+        case 'onway': await api(`/api/v1/orders/${id}/transition`,{method:'POST',body:JSON.stringify({targetStatus:'ON_THE_WAY'})}); break;
+        case 'arrived': await api(`/api/v1/orders/${id}/transition`,{method:'POST',body:JSON.stringify({targetStatus:'ARRIVED'})}); break;
+        case 'diag': await api(`/api/v1/orders/${id}/transition`,{method:'POST',body:JSON.stringify({targetStatus:'DIAGNOSTICS'})}); break;
+        case 'priceok': await api(`/api/v1/orders/${id}/price-approval/accept`,{method:'POST'}); break;
+        case 'repeatvisit': await api(`/api/v1/orders/${id}/visits`,{method:'POST'}); break;
+        case 'payfull': await api(`/api/v1/orders/${id}/payments/full`,{method:'POST'}); break;
+      }
+      state.notice = 'Готово';
+    } catch (e) {
+      state.notice = null;
+      alert(e.message);
+    }
+    render();
+  }));
+}
+
+function bindOpenFormButtons(){
+  document.querySelectorAll('[data-form]').forEach(el=>el.addEventListener('click',()=>{
+    state.formAction = { action: el.dataset.form, orderId: state.selectedOrderId };
+    state.screen = 'form'; state.notice=''; render();
+  }));
+}
+
+// --- Формы для действий, требующих ввода (вместо window.prompt) ---
+
+const FORM_TITLES = {
+  decline:'Отказ от заказа', repair:'Диагностика: можно ремонтировать', part:'Диагностика: нужна деталь',
+  unrep:'Диагностика: ремонт нецелесообразен', custcancel:'Клиент отказался', pricecancel:'Клиент отказался',
+  cancel:'Отменить заказ', reschedule:'Перенести заказ', changemaster:'Сменить мастера'
+};
+
+function reasonFieldHtml(options){
+  const opts = options.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+  return `<select id="reasonSel">${opts}</select>
+    <input id="reasonOther" placeholder="Опишите причину" style="display:none;margin-top:8px">`;
+}
+function wireReasonToggle(options){
+  const sel = document.getElementById('reasonSel'), other = document.getElementById('reasonOther');
+  if (!sel) return;
+  const last = options[options.length-1];
+  const toggle = ()=>{ other.style.display = sel.value===last ? 'block' : 'none'; };
+  sel.addEventListener('change', toggle); toggle();
+}
+function readReason(options){
+  const sel = document.getElementById('reasonSel'), other = document.getElementById('reasonOther');
+  const last = options[options.length-1];
+  return sel.value===last ? (other.value.trim()||sel.value) : sel.value;
+}
+
+async function renderActionForm(){
+  const { action, orderId } = state.formAction;
+  const order = await api('/api/v1/orders/'+orderId);
+  if (!state.catalog) state.catalog = await api('/api/v1/reference-data');
+  const c = state.catalog;
+  const head = `<div class="panel"><div class="row"><h2>${FORM_TITLES[action]||'Действие'}</h2>
+    <button class="btn" data-back="1">← Заказ #${order.number}</button></div>`;
+  const tail = '</div>';
+
+  if (action==='decline') return head +
+    `<div class="error">Заказ уйдёт обратно администратору на переназначение другому мастеру.</div>
+     <div class="field"><label>Причина отказа</label>${reasonFieldHtml(c.masterDeclineReasons)}</div>
+     <div class="sticky-actions"><button class="btn danger" data-submit="decline">Отказаться от заказа</button></div>` + tail;
+
+  if (action==='custcancel' || action==='pricecancel') return head +
+    `<div class="error">Заказ перейдёт в статус «Клиент отказался» — дальнейших действий по нему не будет.</div>
+     <div class="field"><label>Причина отказа клиента</label>${reasonFieldHtml(c.customerCancelReasons)}</div>
+     <div class="sticky-actions"><button class="btn danger" data-submit="${action}">Зафиксировать отказ</button></div>` + tail;
+
+  if (action==='unrep') return head +
+    `<div class="error">Заказ будет закрыт как «Ремонт нецелесообразен» — это финальный статус.</div>
+     <div class="field"><label>Почему ремонт нецелесообразен</label><textarea id="reasonText" placeholder="Опишите причину"></textarea></div>
+     <div class="sticky-actions"><button class="btn danger" data-submit="unrep">Зафиксировать</button></div>` + tail;
+
+  if (action==='cancel') return head +
+    `<div class="error">Опасное действие: заказ перейдёт в статус CANCELLED, отменить это будет нельзя.</div>
+     <div class="field"><label>Причина отмены *</label><textarea id="reasonText"></textarea></div>
+     <div class="sticky-actions"><button class="btn danger" data-submit="cancel">Подтвердить отмену</button></div>` + tail;
+
+  if (action==='repair') return head +
+    `<div class="field"><label>Причина неисправности *</label><textarea id="failureReason"></textarea></div>
+     <div class="field"><label>Какие работы требуются</label><textarea id="workNeeded"></textarea></div>
+     <div class="grid">
+       <div class="field"><label>Стоимость работы, ₽</label><input id="laborPrice" type="number" min="0" value="0"></div>
+       <div class="field"><label>Цена запчастей клиенту, ₽</label><input id="partsPrice" type="number" min="0" value="0"></div>
+     </div>
+     <div class="notice">Итого клиенту: <strong id="totalPreview">0 ₽</strong></div>
+     <div class="sticky-actions"><button class="btn primary" data-submit="repair">Отправить на согласование клиенту</button></div>` + tail;
+
+  if (action==='part') return head +
+    `<div class="field"><label>Название детали *</label><input id="partName"></div>
+     <div class="field"><label>Артикул</label><input id="partNumber"></div>
+     <div class="field"><label>Ориентировочная закупочная цена, ₽</label><input id="partCost" type="number" min="0"></div>
+     <div class="field"><label>Комментарий</label><textarea id="partComment"></textarea></div>
+     <div class="sticky-actions"><button class="btn primary" data-submit="part">Сохранить</button></div>` + tail;
+
+  if (action==='reschedule') return head +
+    `<div class="grid">
+       <div class="field"><label>Новая дата *</label><input id="newDate" type="date"></div>
+       <div class="field"><label>Новый слот *</label><select id="newSlot">${c.timeSlots.map(s=>`<option>${s}</option>`).join('')}</select></div>
+     </div>
+     <div class="field"><label>Причина переноса</label>${reasonFieldHtml(c.rescheduleReasons)}</div>
+     <div class="sticky-actions"><button class="btn primary" data-submit="reschedule">Перенести</button></div>` + tail;
+
+  if (action==='changemaster') {
+    const masters = await api('/api/v1/masters');
+    return head +
+      `<div class="field"><label>Новый мастер</label><select id="newMaster">
+         ${masters.filter(isAssignableMaster).map(m=>`<option value="${m.id}">${esc(m.name)}${m.applianceTypes&&m.applianceTypes.length?' — '+esc(m.applianceTypes.join(', ')):''}</option>`).join('')}
+       </select></div>
+       <div class="sticky-actions"><button class="btn primary" data-submit="changemaster">Назначить</button></div>` + tail;
+  }
+  return head + tail;
+}
+
+function bindActionForm(){
+  const back = document.querySelector('[data-back]');
+  if (back) back.addEventListener('click', ()=>{ state.screen='order'; state.formAction=null; render(); });
+
+  const { action } = state.formAction;
+  const c = state.catalog;
+  const reasonListByAction = { decline:c.masterDeclineReasons, custcancel:c.customerCancelReasons,
+    pricecancel:c.customerCancelReasons, reschedule:c.rescheduleReasons };
+  if (reasonListByAction[action]) wireReasonToggle(reasonListByAction[action]);
+
+  const laborEl = document.getElementById('laborPrice'), partsEl = document.getElementById('partsPrice');
+  if (laborEl) {
+    const update = ()=>{ document.getElementById('totalPreview').textContent =
+      (Number(laborEl.value||0)+Number(partsEl.value||0)) + ' ₽'; };
+    laborEl.addEventListener('input', update); partsEl.addEventListener('input', update); update();
+  }
+
+  const submitBtn = document.querySelector('[data-submit]');
+  if (!submitBtn) return;
+  submitBtn.addEventListener('click', async ()=>{
+    const id = state.formAction.orderId;
+    try {
+      switch(action){
+        case 'decline':
+          await api(`/api/v1/orders/${id}/decline`,{method:'POST',body:JSON.stringify({reason:readReason(c.masterDeclineReasons)})});
+          break;
+        case 'custcancel': case 'pricecancel':
+          await api(`/api/v1/orders/${id}/price-approval/decline`,{method:'POST',body:JSON.stringify({reason:readReason(c.customerCancelReasons)})});
+          break;
+        case 'unrep': {
+          const reason = document.getElementById('reasonText').value.trim();
+          if (!reason) { alert('Укажите причину'); return; }
+          await api(`/api/v1/orders/${id}/diagnosis/unrepairable`,{method:'POST',body:JSON.stringify({reason})});
+          break;
+        }
+        case 'cancel': {
+          const reason = document.getElementById('reasonText').value.trim();
+          if (!reason) { alert('Укажите причину отмены'); return; }
+          await api(`/api/v1/orders/${id}/cancel`,{method:'POST',body:JSON.stringify({reason})});
+          break;
+        }
+        case 'repair': {
+          const failureReason = document.getElementById('failureReason').value.trim();
+          if (!failureReason) { alert('Укажите причину неисправности'); return; }
+          const workNeeded = document.getElementById('workNeeded').value;
+          const laborPrice = Number(document.getElementById('laborPrice').value||0);
+          const partsSellPrice = Number(document.getElementById('partsPrice').value||0);
+          await api(`/api/v1/orders/${id}/diagnosis/price-approval`,{method:'POST',body:JSON.stringify({failureReason,workNeeded,laborPrice,partsSellPrice})});
+          break;
+        }
+        case 'part': {
+          const partName = document.getElementById('partName').value.trim();
+          if (!partName) { alert('Укажите название детали'); return; }
+          const partNumber = document.getElementById('partNumber').value.trim() || null;
+          const costStr = document.getElementById('partCost').value;
+          const comment = document.getElementById('partComment').value.trim() || null;
+          await api(`/api/v1/orders/${id}/diagnosis/waiting-part`,{method:'POST',body:JSON.stringify(
+            {partName,partNumber,estimatedPurchasePrice: costStr?Number(costStr):null, comment})});
+          break;
+        }
+        case 'reschedule': {
+          const newDate = document.getElementById('newDate').value;
+          if (!newDate) { alert('Укажите новую дату'); return; }
+          const [newFrom,newTo] = document.getElementById('newSlot').value.split('-');
+          const reason = readReason(c.rescheduleReasons);
+          await api(`/api/v1/orders/${id}/reschedule`,{method:'POST',body:JSON.stringify({newDate,newFrom,newTo,reason})});
+          break;
+        }
+        case 'changemaster': {
+          const masterId = document.getElementById('newMaster').value;
+          await api(`/api/v1/orders/${id}/change-master`,{method:'POST',body:JSON.stringify({masterId})});
+          break;
+        }
+      }
+      state.screen='order'; state.formAction=null; state.notice='Готово'; render();
+    } catch (e) { alert(e.message); }
+  });
+}
+
+async function render(){
+  renderNav();
+  document.getElementById('roleCaption').textContent = 'Роль: ' + (state.role||'—');
+  const main = document.getElementById('main');
+  main.innerHTML = '<div class="panel muted">Загрузка…</div>';
+  try {
+    let html;
+    if (state.screen==='active') html = await renderActive();
+    else if (state.screen==='history') html = await renderHistory();
+    else if (state.screen==='unassigned') html = await renderUnassigned();
+    else if (state.screen==='masters') html = await renderMasters();
+    else if (state.screen==='stats') html = await renderStats();
+    else if (state.screen==='search') html = await renderSearch();
+    else if (state.screen==='create') html = await renderCreate();
+    else if (state.screen==='order') html = await renderOrder();
+    else if (state.screen==='form') html = await renderActionForm();
+    else if (state.screen==='masterDetail') html = await renderMasterDetail();
+    else if (state.screen==='users') html = await renderUsers();
+    else if (state.screen==='createUser') html = await renderCreateUser();
+    else if (state.screen==='createMasterProfile') html = await renderCreateMasterProfile();
+    else if (state.screen==='editUser') html = await renderEditUser();
+    else if (state.screen==='referenceItems') html = await renderReferenceItems();
+    else if (state.screen==='leads') html = await renderLeads();
+    else if (state.screen==='leadConvert') html = await renderLeadConvert();
+    else if (state.screen==='leadReject') html = await renderLeadReject();
+    main.innerHTML = html;
+  } catch (e) {
+    main.innerHTML = `<div class="panel"><div class="error">${esc(e.message)}</div></div>`;
+    return;
+  }
+  bindOpenButtons();
+  bindOrderActions();
+  bindOpenFormButtons();
+  bindOpenMasterButtons();
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{
+    state.screen = el.dataset.nav; state.notice=''; render();
+  }));
+  if (state.screen==='form') bindActionForm();
+  if (state.screen==='masterDetail') bindMasterDetail();
+  if (state.screen==='users') bindUsers();
+  if (state.screen==='createUser') bindCreateUser();
+  if (state.screen==='createMasterProfile') bindCreateMasterProfile();
+  if (state.screen==='editUser') bindEditUser();
+  if (state.screen==='referenceItems') bindReferenceItems();
+  if (state.screen==='stats') bindStatsPeriod();
+  if (state.screen==='leads') bindLeads();
+  if (state.screen==='leadConvert') bindLeadConvert();
+  if (state.screen==='leadReject') bindLeadReject();
+
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+  if (exportCsvBtn) exportCsvBtn.addEventListener('click', ()=>downloadExport('csv'));
+  const exportXlsxBtn = document.getElementById('exportXlsxBtn');
+  if (exportXlsxBtn) exportXlsxBtn.addEventListener('click', ()=>downloadExport('xlsx'));
+
+  const searchBtn = document.getElementById('searchBtn');
+  if (searchBtn) searchBtn.addEventListener('click', async ()=>{
+    const q = document.getElementById('searchInput').value.trim();
+    const masterId = document.getElementById('searchMaster').value;
+    const date = document.getElementById('searchDate').value;
+    if (!q && !masterId && !date) { alert('Введите запрос, выберите мастера или дату'); return; }
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (masterId) params.set('masterId', masterId);
+    if (date) params.set('date', date);
+    try {
+      const results = await api('/api/v1/orders/search?'+params.toString());
+      document.getElementById('searchResults').innerHTML = results.map(orderCard).join('') || '<div class="empty">Ничего не найдено</div>';
+      bindOpenButtons();
+    } catch (e) { alert(e.message); }
+  });
+
+  const createBtn = document.getElementById('createBtn');
+  if (createBtn) createBtn.addEventListener('click', async ()=>{
+    try {
+      const order = await api('/api/v1/orders', {method:'POST', body: JSON.stringify({
+        customerName: document.getElementById('cName').value,
+        customerPhone: document.getElementById('cPhone').value,
+        applianceType: document.getElementById('cType').value,
+        brand: document.getElementById('cBrand').value,
+        model: document.getElementById('cModel').value,
+        symptom: document.getElementById('cProblem').value,
+        description: null,
+        address: document.getElementById('cAddress').value,
+        visitDate: document.getElementById('cDate').value,
+        timeFrom: document.getElementById('cSlot').value.split('-')[0],
+        timeTo: document.getElementById('cSlot').value.split('-')[1],
+        masterId: document.getElementById('cMaster').value || null,
+        adminComment: document.getElementById('cComment').value,
+        leadId: null, crmId: null, source: 'miniapp'
+      })});
+      state.selectedOrderId = order.id; state.screen='order'; state.notice='Заявка создана'; render();
+    } catch (e) { alert(e.message); }
+  });
+}
+
+async function init(){
+  try {
+    const me = await api('/api/v1/me');
+    state.role = me.role; state.masterId = me.masterId;
+    render();
+  } catch (e) {
+    document.getElementById('roleCaption').textContent = 'Доступ не предоставлен';
+    document.getElementById('main').innerHTML = `<div class="panel"><div class="error">
+      Не удалось авторизоваться (${esc(e.message)}). Откройте приложение через кнопку бота в Telegram.</div></div>`;
+  }
+}
+init();
+</script>
+</body>
+</html>

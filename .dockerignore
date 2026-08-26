@@ -1,0 +1,7 @@
+target
+data
+obsidian-vault
+.git
+.gitignore
+*.log
+mvnw.cmd

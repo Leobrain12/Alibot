@@ -1,0 +1,104 @@
+spring:
+  application:
+    name: alibot
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/alibot}
+    username: ${DB_USER:alibot}
+    password: ${DB_PASSWORD:alibot}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+server:
+  port: ${PORT:8080}
+
+management:
+  # ТЗ п.104 — мониторинг: health (включая кастомный индикатор бота, см. TelegramBotHealthIndicator)
+  # и базовые метрики. Осознанно НЕ открываем env/beans/threaddump и т.п. — там могут утечь секреты
+  # из окружения (см. ТЗ п.102 про secrets), а не только полезная для мониторинга информация.
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+
+bot:
+  # Бот стартует, только если задан токен — так можно поднять REST API + Mini App без него.
+  token: ${TELEGRAM_BOT_TOKEN:}
+  username: ${TELEGRAM_BOT_USERNAME:}
+  mode: ${BOT_MODE:polling}
+  webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
+  webhook-secret-token: ${TELEGRAM_WEBHOOK_SECRET:}
+
+app:
+  bootstrap:
+    superadmin-telegram-id: ${SUPERADMIN_TELEGRAM_ID:}
+  internal-api-key: ${INTERNAL_API_KEY:change-me-internal-api-key}
+  media:
+    storage-dir: ${MEDIA_STORAGE_DIR:./data/media}
+    max-video-size-mb: 20
+    max-photo-size-mb: 20
+    max-media-count-per-visit: 20
+    # ТЗ п.100 — 0 (по умолчанию) значит хранить бессрочно; удаление файлов необратимо, поэтому
+    # включается явно, а не тихим дефолтом.
+    retention-days: ${MEDIA_RETENTION_DAYS:0}
+    retention-cron: ${MEDIA_RETENTION_CRON:0 0 3 * * *}
+  order:
+    accept-timeout-minutes: 10
+    reminder-minutes: 60
+    max-contact-attempts: 3
+  conversation:
+    timeout-minutes: 30
+  mini-app:
+    base-url: ${MINI_APP_BASE_URL:}
+  schedule:
+    # ТЗ п.79 — время ежедневной сводки настраивается; ТЗ п.83/84 — как часто проверять
+    # напоминания и эскалацию неподтверждённых заявок.
+    daily-report-cron: ${DAILY_REPORT_CRON:0 0 20 * * *}
+    timers-cron: ${TIMERS_CRON:0 */5 * * * *}
+  crm:
+    # ТЗ п.85-87 — CRMAdapter. Пусто по умолчанию: события никуда не отправляются и не
+    # копятся в очереди, пока не задан реальный вебхук внешней CRM.
+    webhook-url: ${CRM_WEBHOOK_URL:}
+    webhook-secret: ${CRM_WEBHOOK_SECRET:}
+    max-attempts: ${CRM_MAX_ATTEMPTS:5}
+    retry-cron: ${CRM_RETRY_CRON:0 * * * * *}
+
+logging:
+  level:
+    com.alibot: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:h2:file:./data/alibot-dev;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;NON_KEYWORDS=USER
+    username: sa
+    password: sa
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+app:
+  internal-api-key: dev-api-key

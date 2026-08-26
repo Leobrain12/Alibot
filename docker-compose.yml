@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: alibot
+      POSTGRES_USER: ${DB_USER:-alibot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Задайте DB_PASSWORD в .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-alibot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Указываем на контейнер db по имени сервиса, а не localhost — вручную не трогать,
+      # остальные переменные (токен бота, ключи, домен) берутся из .env.
+      DB_URL: jdbc:postgresql://db:5432/alibot
+      MEDIA_STORAGE_DIR: /data/media
+      PORT: 8080
+    volumes:
+      - media-data:/data/media
+    ports:
+      # Наружу отдаём только на localhost — публичный доступ идёт через nginx+HTTPS на хосте
+      # (см. deploy/README.md), не напрямую на этот порт.
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  db-data:
+  media-data:

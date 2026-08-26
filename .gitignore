@@ -1,0 +1,12 @@
+target/
+data/
+build/
+*.class
+.idea/
+*.iml
+.vscode/
+.claude/
+.DS_Store
+.mvn/wrapper/maven-wrapper.jar
+.env
+cp.txt

@@ -1,0 +1,26 @@
+# Шаблон для /etc/nginx/sites-available/alibot — см. deploy/README.md шаг 5.
+# Перед использованием замените ВАШ_ДОМЕН на реальный домен (например alibot.example.com).
+# Этот файл — только HTTP: certbot сам допишет HTTPS-блок и редирект при выпуске сертификата,
+# вручную дописывать server{listen 443} не нужно.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ВАШ_ДОМЕН;
+
+    # Mini App отдаёт файлы напрямую из Spring Boot (static/miniapp), поэтому весь трафик
+    # просто проксируется на приложение в Docker — там уже разведены /miniapp, /api, /telegram.
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Telegram webhook и long polling внутри приложения — обычные HTTP-запросы,
+        # апгрейд до WebSocket не нужен, поэтому доп. заголовков Upgrade/Connection нет.
+        proxy_read_timeout 60s;
+    }
+
+    client_max_body_size 25M;  # соответствует лимиту загрузки медиа в application.yml
+}

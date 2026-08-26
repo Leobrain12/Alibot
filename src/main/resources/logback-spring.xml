@@ -1,0 +1,17 @@
+<configuration>
+    <!-- ТЗ п.103 — маскирование телефонов в логах на уровне форматирования (см. PiiMaskingConverter),
+         не полагаемся на то, что каждый будущий log.info(...) не забудет об этом сам. -->
+    <conversionRule conversionWord="maskedMsg" converterClass="com.alibot.logging.PiiMaskingConverter"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %-40.40logger{39} : %maskedMsg%n%ex</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <logger name="com.alibot" level="INFO"/>
+</configuration>
