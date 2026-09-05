@@ -6,6 +6,7 @@ import com.alibot.bot.keyboard.Keyboards;
 import com.alibot.config.BotConfiguredCondition;
 import com.alibot.service.ReferenceDataService;
 import com.alibot.domain.ConversationState;
+import com.alibot.domain.ReferenceCategory;
 import com.alibot.domain.MediaStage;
 import com.alibot.domain.Master;
 import com.alibot.domain.Order;
@@ -50,6 +51,7 @@ public class MiscWizards {
     public static final String MEDIA = "MEDIA";
     public static final String PRICE_APPROVAL_INPUT = "PRICE_APPROVAL_INPUT";
     public static final String SEARCH = "SEARCH";
+    public static final String REFERENCE_ADD = "REFERENCE_ADD";
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
@@ -110,6 +112,14 @@ public class MiscWizards {
     public void startSearch(long chatId, long telegramUserId) {
         conversations.start(chatId, telegramUserId, SEARCH, "QUERY", null);
         sender.send(chatId, "Введите номер заказа / телефон / имя / адрес:");
+    }
+
+    public void startReferenceAdd(ReferenceCategory category, long chatId, long telegramUserId) {
+        ConversationState state = conversations.start(chatId, telegramUserId, REFERENCE_ADD, "VALUE", null);
+        Map<String, String> draft = new java.util.HashMap<>();
+        draft.put("category", category.name());
+        conversations.update(state, "VALUE", draft);
+        sender.send(chatId, "Новое значение для «%s»:".formatted(category.label()));
     }
 
     // --- Обработка ---
@@ -217,6 +227,13 @@ public class MiscWizards {
             case RESCHEDULE -> handleRescheduleText(state, draft, text, chatId, actor);
             case WARRANTY -> handleWarrantyText(state, draft, text, chatId, actor);
             case PRICE_APPROVAL_INPUT -> handlePriceApprovalText(state, draft, text, chatId, orderId, actor);
+            case REFERENCE_ADD -> {
+                ReferenceCategory category = ReferenceCategory.valueOf(draft.get("category"));
+                catalog.create(category, text, actor);
+                conversations.complete(state);
+                sender.send(chatId, "Добавлено: " + text.trim(),
+                        Keyboards.of("К списку", "REFCAT:" + category.name()));
+            }
             case SEARCH -> {
                 List<Order> results = orderService.search(text, actor);
                 conversations.complete(state);

@@ -10,12 +10,15 @@ import com.alibot.domain.Master;
 import com.alibot.domain.MediaStage;
 import com.alibot.domain.Order;
 import com.alibot.domain.OrderStatus;
+import com.alibot.domain.ReferenceCategory;
+import com.alibot.domain.ReferenceItem;
 import com.alibot.service.AuthenticatedActor;
 import com.alibot.service.ContactAttemptService;
 import com.alibot.service.ConversationStateService;
 import com.alibot.service.MasterService;
 import com.alibot.service.OrderService;
 import com.alibot.service.PaymentService;
+import com.alibot.service.ReferenceDataService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +48,7 @@ public class CallbackRouter {
     private final MasterService masterService;
     private final PaymentService paymentService;
     private final ContactAttemptService contactAttemptService;
+    private final ReferenceDataService referenceDataService;
     private final OrderPresenter presenter;
     private final BotSender sender;
 
@@ -61,7 +65,7 @@ public class CallbackRouter {
             "ACC", "DEC", "OTW", "ARR", "DIAG", "DGR", "PRICE_OK", "PRICE_NO", "NC", "NCOK",
             "RESCH", "RPV", "MED", "REPORT", "CHM", "ASSIGN", "CANCELORD", "WARR", "PAYFULL", "ORDER",
             "MENU_NEW_ORDER", "MENU_ACTIVE", "MENU_UNASSIGNED", "MENU_LEADS", "MENU_HISTORY", "MENU_STATS",
-            "MENU_MASTERS", "MENU_SEARCH", "STATS");
+            "MENU_MASTERS", "MENU_SEARCH", "STATS", "MENU_REFERENCE", "REFCAT", "REFTOG", "REFADD");
 
     public void handle(CallbackQuery cq, AuthenticatedActor actor) {
         long chatId = cq.getMessage().getChatId();
@@ -145,6 +149,14 @@ public class CallbackRouter {
             case "STATS" -> commandRouter.sendStats(chatId, actor, parts[1]);
             case "MENU_MASTERS" -> sendMastersList(chatId, actor);
             case "MENU_SEARCH" -> miscWizards.startSearch(chatId, telegramUserId);
+            case "MENU_REFERENCE" -> commandRouter.sendReferenceCategories(chatId, actor);
+            case "REFCAT" -> commandRouter.sendReferenceItems(chatId, ReferenceCategory.valueOf(parts[1]), actor);
+            case "REFTOG" -> {
+                ReferenceItem updated = referenceDataService.update(
+                        UUID.fromString(parts[1]), null, Boolean.parseBoolean(parts[2]), null, actor);
+                commandRouter.sendReferenceItems(chatId, updated.getCategory(), actor);
+            }
+            case "REFADD" -> miscWizards.startReferenceAdd(ReferenceCategory.valueOf(parts[1]), chatId, telegramUserId);
             default -> sender.send(chatId, "Действие не распознано.");
         }
     }

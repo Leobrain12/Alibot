@@ -6,8 +6,11 @@ import com.alibot.bot.keyboard.Keyboards;
 import com.alibot.config.AppProperties;
 import com.alibot.config.BotConfiguredCondition;
 import com.alibot.domain.Order;
+import com.alibot.domain.ReferenceCategory;
+import com.alibot.domain.ReferenceItem;
 import com.alibot.service.AuthenticatedActor;
 import com.alibot.service.OrderService;
+import com.alibot.service.ReferenceDataService;
 import com.alibot.service.StatsService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -28,6 +31,7 @@ public class CommandRouter {
     private final CreateOrderWizard createOrderWizard;
     private final OrderService orderService;
     private final com.alibot.service.LeadService leadService;
+    private final ReferenceDataService referenceDataService;
     private final StatsService statsService;
     private final OrderPresenter presenter;
     private final AppProperties appProperties;
@@ -52,20 +56,28 @@ public class CommandRouter {
     }
 
     public void sendMainMenu(long chatId, AuthenticatedActor actor) {
-        InlineKeyboardMarkup menu = actor.isAdmin()
-                ? Keyboards.of(
-                        "Новая заявка", "MENU_NEW_ORDER",
-                        "Активные заказы", "MENU_ACTIVE",
-                        "Нераспределённые", "MENU_UNASSIGNED",
-                        "Лиды", "MENU_LEADS",
-                        "История", "MENU_HISTORY",
-                        "Мастера", "MENU_MASTERS",
-                        "Поиск", "MENU_SEARCH",
-                        "Статистика", "MENU_STATS")
-                : Keyboards.of(
-                        "Активные заказы", "MENU_ACTIVE",
-                        "История", "MENU_HISTORY",
-                        "Моя статистика", "MENU_STATS");
+        InlineKeyboardMarkup menu;
+        if (actor.isAdmin()) {
+            List<String[]> rows = new ArrayList<>(List.of(
+                    new String[]{"Новая заявка", "MENU_NEW_ORDER"},
+                    new String[]{"Активные заказы", "MENU_ACTIVE"},
+                    new String[]{"Нераспределённые", "MENU_UNASSIGNED"},
+                    new String[]{"Лиды", "MENU_LEADS"},
+                    new String[]{"История", "MENU_HISTORY"},
+                    new String[]{"Мастера", "MENU_MASTERS"},
+                    new String[]{"Поиск", "MENU_SEARCH"},
+                    new String[]{"Статистика", "MENU_STATS"}));
+            // Справочники — только SUPERADMIN (ТЗ п.132), как и в Mini App.
+            if (actor.isSuperAdmin()) {
+                rows.add(new String[]{"Справочники", "MENU_REFERENCE"});
+            }
+            menu = Keyboards.singleColumn(rows);
+        } else {
+            menu = Keyboards.of(
+                    "Активные заказы", "MENU_ACTIVE",
+                    "История", "MENU_HISTORY",
+                    "Моя статистика", "MENU_STATS");
+        }
         menu = withMiniAppRow(menu);
         sender.send(chatId, actor.isAdmin() ? "Меню администратора:" : "Меню мастера:", menu);
     }
@@ -134,6 +146,37 @@ public class CommandRouter {
         }
         sb.append("\nОбработать (конвертировать в заявку или отклонить) — в Mini App, раздел «Лиды».");
         sender.send(chatId, sb.toString());
+    }
+
+    /** ТЗ п.132 — то же управление справочниками, что в Mini App (SUPERADMIN), но в чате: список
+     *  категорий → значения категории с переключением активности и добавлением новых.
+     *  Проверка роли не дублируется здесь — её делает ReferenceDataService.listAll(). */
+    public void sendReferenceCategories(long chatId, AuthenticatedActor actor) {
+        List<ReferenceItem> all = referenceDataService.listAll(actor);
+        List<String[]> options = new ArrayList<>();
+        for (ReferenceCategory category : ReferenceCategory.values()) {
+            long count = all.stream().filter(i -> i.getCategory() == category).count();
+            options.add(new String[]{"%s (%d)".formatted(category.label(), count), "REFCAT:" + category.name()});
+        }
+        sender.send(chatId, "Справочники:", Keyboards.singleColumn(options));
+    }
+
+    public void sendReferenceItems(long chatId, ReferenceCategory category, AuthenticatedActor actor) {
+        List<ReferenceItem> items = referenceDataService.listAll(actor).stream()
+                .filter(i -> i.getCategory() == category)
+                .toList();
+        StringBuilder sb = new StringBuilder(category.label() + ":\n");
+        if (items.isEmpty()) {
+            sb.append("(пусто)\n");
+        }
+        List<String[]> options = new ArrayList<>();
+        for (ReferenceItem item : items) {
+            sb.append(item.isActive() ? "🟢 " : "⚪ ").append(item.getValue()).append('\n');
+            options.add(new String[]{(item.isActive() ? "Скрыть: " : "Показать: ") + item.getValue(),
+                    "REFTOG:" + item.getId() + ":" + !item.isActive()});
+        }
+        options.add(new String[]{"+ Добавить значение", "REFADD:" + category.name()});
+        sender.send(chatId, sb.toString(), Keyboards.singleColumn(options));
     }
 
     public void sendStats(long chatId, AuthenticatedActor actor) {
