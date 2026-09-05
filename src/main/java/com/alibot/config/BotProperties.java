@@ -12,6 +12,43 @@ public class BotProperties {
     private String webhookBaseUrl;
     private String webhookSecretToken;
 
+    /** Некоторые хостинги/дата-центры режут исходящий трафик к серверам Telegram (проверено на
+     *  практике — DNS резолвится, но TCP-подключение висит по таймауту, хотя остальной интернет
+     *  работает). Пусто по умолчанию — прокси не используется; задаётся только если реально
+     *  понадобился обходной путь. HTTP или SOCKS5. */
+    private String proxyHost;
+    private Integer proxyPort;
+    /** HTTP | SOCKS */
+    private String proxyType = "HTTP";
+
+    public boolean isProxyConfigured() {
+        return proxyHost != null && !proxyHost.isBlank() && proxyPort != null && proxyPort > 0;
+    }
+
+    public String getProxyHost() {
+        return proxyHost;
+    }
+
+    public void setProxyHost(String proxyHost) {
+        this.proxyHost = proxyHost;
+    }
+
+    public Integer getProxyPort() {
+        return proxyPort;
+    }
+
+    public void setProxyPort(Integer proxyPort) {
+        this.proxyPort = proxyPort;
+    }
+
+    public String getProxyType() {
+        return proxyType;
+    }
+
+    public void setProxyType(String proxyType) {
+        this.proxyType = proxyType;
+    }
+
     public boolean isConfigured() {
         return token != null && !token.isBlank();
     }

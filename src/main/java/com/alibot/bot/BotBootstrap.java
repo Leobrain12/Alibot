@@ -3,6 +3,8 @@ package com.alibot.bot;
 import com.alibot.config.AppProperties;
 import com.alibot.config.BotConfiguredCondition;
 import com.alibot.config.BotProperties;
+import com.alibot.config.TelegramHttpClientFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +49,11 @@ public class BotBootstrap implements ApplicationRunner {
             log.info("Telegram webhook установлен: {}", url);
         } else {
             telegramClient.execute(DeleteWebhook.builder().build());
-            longPollingApp = new TelegramBotsLongPollingApplication();
+            // ObjectMapper::new — ровно тот же дефолт, что и у пустого конструктора этого класса
+            // (см. TelegramHttpClientFactory) — переопределяем только OkHttpClient, чтобы
+            // long-polling сессия тоже шла через прокси, если он настроен.
+            longPollingApp = new TelegramBotsLongPollingApplication(
+                    ObjectMapper::new, () -> TelegramHttpClientFactory.build(botProperties));
             longPollingApp.registerBot(botProperties.getToken(), bot);
             log.info("Telegram bot запущен в режиме long polling");
         }

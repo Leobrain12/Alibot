@@ -44,6 +44,13 @@ bot:
   mode: ${BOT_MODE:polling}
   webhook-base-url: ${TELEGRAM_WEBHOOK_BASE_URL:}
   webhook-secret-token: ${TELEGRAM_WEBHOOK_SECRET:}
+  # Пусто по умолчанию — обходной путь для хостингов, которые режут исходящий трафик к серверам
+  # Telegram (see TelegramHttpClientFactory).
+  proxy-host: ${TELEGRAM_PROXY_HOST:}
+  # 0 — сентинел "не задан", не пустая строка: биндинг пустой строки в Integer через
+  # плейсхолдер — источник лишней неопределённости, проще держать значение всегда валидным.
+  proxy-port: ${TELEGRAM_PROXY_PORT:0}
+  proxy-type: ${TELEGRAM_PROXY_TYPE:HTTP}
 
 app:
   bootstrap:

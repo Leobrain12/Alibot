@@ -16,6 +16,6 @@ public class TelegramClientConfig {
     @Bean
     @Conditional(BotConfiguredCondition.class)
     public TelegramClient telegramClient(BotProperties botProperties) {
-        return new OkHttpTelegramClient(botProperties.getToken());
+        return new OkHttpTelegramClient(TelegramHttpClientFactory.build(botProperties), botProperties.getToken());
     }
 }
