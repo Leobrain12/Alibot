@@ -21,4 +21,8 @@ RUN mkdir -p /data/media && chown -R alibot:alibot /data /app
 USER alibot
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# -Djava.net.preferIPv4Stack=true — в контейнерных окружениях без реального IPv6-маршрута
+# наружу JVM по умолчанию всё равно пытается резолвить/подключаться по IPv6 первым и падает
+# с "Network is unreachable" на внешних HTTP-вызовах (здесь — Telegram API), даже если IPv4
+# работает нормально. Форсируем IPv4, чтобы не зависеть от того, настроен ли IPv6 на хосте.
+ENTRYPOINT ["java", "-Djava.net.preferIPv4Stack=true", "-jar", "/app/app.jar"]
