@@ -10,10 +10,13 @@ import com.alibot.domain.ReferenceCategory;
 import com.alibot.domain.MediaStage;
 import com.alibot.domain.Master;
 import com.alibot.domain.Order;
+import com.alibot.domain.Role;
+import com.alibot.domain.User;
 import com.alibot.service.AuthenticatedActor;
 import com.alibot.service.ConversationStateService;
 import com.alibot.service.MasterService;
 import com.alibot.service.OrderService;
+import com.alibot.service.UserManagementService;
 import com.alibot.service.dto.PriceApprovalCommand;
 import com.alibot.service.dto.RescheduleCommand;
 import com.alibot.service.dto.WaitingPartCommand;
@@ -52,6 +55,7 @@ public class MiscWizards {
     public static final String PRICE_APPROVAL_INPUT = "PRICE_APPROVAL_INPUT";
     public static final String SEARCH = "SEARCH";
     public static final String REFERENCE_ADD = "REFERENCE_ADD";
+    public static final String USER_ADD = "USER_ADD";
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
@@ -59,6 +63,7 @@ public class MiscWizards {
     private final ReferenceDataService catalog;
     private final OrderService orderService;
     private final MasterService masterService;
+    private final UserManagementService userManagementService;
     private final OrderPresenter presenter;
     private final BotSender sender;
 
@@ -120,6 +125,12 @@ public class MiscWizards {
         draft.put("category", category.name());
         conversations.update(state, "VALUE", draft);
         sender.send(chatId, "Новое значение для «%s»:".formatted(category.label()));
+    }
+
+    /** MASTER здесь не предлагается — см. комментарий в CommandRouter.sendUsersList. */
+    public void startUserAdd(long chatId, long telegramUserId) {
+        conversations.start(chatId, telegramUserId, USER_ADD, "TELEGRAM_ID", null);
+        sender.send(chatId, "Telegram user id нового пользователя (узнать можно у @userinfobot):");
     }
 
     // --- Обработка ---
@@ -193,6 +204,17 @@ public class MiscWizards {
                     sender.send(chatId, "Медиа сохранены.");
                 }
             }
+            case USER_ADD -> {
+                if ("ROLE".equals(state.getStep())) {
+                    Role role = Role.valueOf(data.split(":")[1]);
+                    User created = userManagementService.createUser(
+                            Long.parseLong(draft.get("telegramUserId")), draft.get("name"), draft.get("phone"),
+                            role, actor);
+                    conversations.complete(state);
+                    sender.send(chatId, "Пользователь создан: %s (%s), tg:%d"
+                            .formatted(created.getName(), created.getRole(), created.getTelegramUserId()));
+                }
+            }
             default -> { }
         }
     }
@@ -234,6 +256,7 @@ public class MiscWizards {
                 sender.send(chatId, "Добавлено: " + text.trim(),
                         Keyboards.of("К списку", "REFCAT:" + category.name()));
             }
+            case USER_ADD -> handleUserAddText(state, draft, text, chatId, actor);
             case SEARCH -> {
                 List<Order> results = orderService.search(text, actor);
                 conversations.complete(state);
@@ -318,6 +341,39 @@ public class MiscWizards {
                 sender.send(chatId, "Стоимость клиенту: работы %s ₽, запчасти %s ₽, итого %s ₽"
                         .formatted(order.getLaborPrice(), order.getPartsSellPrice(), order.getEstimatedPrice()));
                 sender.send(chatId, presenter.renderCard(order), presenter.actionsFor(order, actor));
+            }
+            default -> { }
+        }
+    }
+
+    private void handleUserAddText(ConversationState state, Map<String, String> draft, String text, long chatId,
+                                    AuthenticatedActor actor) {
+        switch (state.getStep()) {
+            case "TELEGRAM_ID" -> {
+                long telegramId;
+                try {
+                    telegramId = Long.parseLong(text.trim());
+                } catch (NumberFormatException e) {
+                    sender.send(chatId, "Введите число — telegram_user_id:");
+                    return;
+                }
+                if (telegramId <= 0) {
+                    sender.send(chatId, "telegram_user_id должен быть положительным числом:");
+                    return;
+                }
+                draft.put("telegramUserId", String.valueOf(telegramId));
+                conversations.update(state, "NAME", draft);
+                sender.send(chatId, "Имя:");
+            }
+            case "NAME" -> {
+                draft.put("name", text.trim());
+                conversations.update(state, "PHONE", draft);
+                sender.send(chatId, "Телефон (или '-'):");
+            }
+            case "PHONE" -> {
+                draft.put("phone", "-".equals(text.trim()) ? null : text.trim());
+                conversations.update(state, "ROLE", draft);
+                sender.send(chatId, "Роль:", Keyboards.of("ADMIN", "UROLE:ADMIN", "SUPERADMIN", "UROLE:SUPERADMIN"));
             }
             default -> { }
         }

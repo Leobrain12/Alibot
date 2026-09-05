@@ -12,6 +12,7 @@ import com.alibot.domain.Order;
 import com.alibot.domain.OrderStatus;
 import com.alibot.domain.ReferenceCategory;
 import com.alibot.domain.ReferenceItem;
+import com.alibot.domain.User;
 import com.alibot.service.AuthenticatedActor;
 import com.alibot.service.ContactAttemptService;
 import com.alibot.service.ConversationStateService;
@@ -19,6 +20,7 @@ import com.alibot.service.MasterService;
 import com.alibot.service.OrderService;
 import com.alibot.service.PaymentService;
 import com.alibot.service.ReferenceDataService;
+import com.alibot.service.UserManagementService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,7 @@ public class CallbackRouter {
     private final PaymentService paymentService;
     private final ContactAttemptService contactAttemptService;
     private final ReferenceDataService referenceDataService;
+    private final UserManagementService userManagementService;
     private final OrderPresenter presenter;
     private final BotSender sender;
 
@@ -65,7 +68,8 @@ public class CallbackRouter {
             "ACC", "DEC", "OTW", "ARR", "DIAG", "DGR", "PRICE_OK", "PRICE_NO", "NC", "NCOK",
             "RESCH", "RPV", "MED", "REPORT", "CHM", "ASSIGN", "CANCELORD", "WARR", "PAYFULL", "ORDER",
             "MENU_NEW_ORDER", "MENU_ACTIVE", "MENU_UNASSIGNED", "MENU_LEADS", "MENU_HISTORY", "MENU_STATS",
-            "MENU_MASTERS", "MENU_SEARCH", "STATS", "MENU_REFERENCE", "REFCAT", "REFTOG", "REFADD");
+            "MENU_MASTERS", "MENU_SEARCH", "STATS", "MENU_REFERENCE", "REFCAT", "REFTOG", "REFADD",
+            "MENU_USERS", "USERTOG", "USERADD");
 
     public void handle(CallbackQuery cq, AuthenticatedActor actor) {
         long chatId = cq.getMessage().getChatId();
@@ -87,7 +91,7 @@ public class CallbackRouter {
                     return;
                 }
                 case MiscWizards.DECLINE_REASON, MiscWizards.PRICE_DECLINE_REASON, MiscWizards.RESCHEDULE,
-                     MiscWizards.WARRANTY, MiscWizards.MEDIA -> {
+                     MiscWizards.WARRANTY, MiscWizards.MEDIA, MiscWizards.USER_ADD -> {
                     miscWizards.handleCallback(state, data, actor);
                     return;
                 }
@@ -157,6 +161,12 @@ public class CallbackRouter {
                 commandRouter.sendReferenceItems(chatId, updated.getCategory(), actor);
             }
             case "REFADD" -> miscWizards.startReferenceAdd(ReferenceCategory.valueOf(parts[1]), chatId, telegramUserId);
+            case "MENU_USERS" -> commandRouter.sendUsersList(chatId, actor);
+            case "USERTOG" -> {
+                userManagementService.setActive(UUID.fromString(parts[1]), Boolean.parseBoolean(parts[2]), actor);
+                commandRouter.sendUsersList(chatId, actor);
+            }
+            case "USERADD" -> miscWizards.startUserAdd(chatId, telegramUserId);
             default -> sender.send(chatId, "Действие не распознано.");
         }
     }

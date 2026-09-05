@@ -8,10 +8,12 @@ import com.alibot.config.BotConfiguredCondition;
 import com.alibot.domain.Order;
 import com.alibot.domain.ReferenceCategory;
 import com.alibot.domain.ReferenceItem;
+import com.alibot.domain.User;
 import com.alibot.service.AuthenticatedActor;
 import com.alibot.service.OrderService;
 import com.alibot.service.ReferenceDataService;
 import com.alibot.service.StatsService;
+import com.alibot.service.UserManagementService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -32,6 +34,7 @@ public class CommandRouter {
     private final OrderService orderService;
     private final com.alibot.service.LeadService leadService;
     private final ReferenceDataService referenceDataService;
+    private final UserManagementService userManagementService;
     private final StatsService statsService;
     private final OrderPresenter presenter;
     private final AppProperties appProperties;
@@ -67,9 +70,10 @@ public class CommandRouter {
                     new String[]{"Мастера", "MENU_MASTERS"},
                     new String[]{"Поиск", "MENU_SEARCH"},
                     new String[]{"Статистика", "MENU_STATS"}));
-            // Справочники — только SUPERADMIN (ТЗ п.132), как и в Mini App.
+            // Справочники и Пользователи — только SUPERADMIN (ТЗ п.5.1/132), как и в Mini App.
             if (actor.isSuperAdmin()) {
                 rows.add(new String[]{"Справочники", "MENU_REFERENCE"});
+                rows.add(new String[]{"Пользователи", "MENU_USERS"});
             }
             menu = Keyboards.singleColumn(rows);
         } else {
@@ -176,6 +180,24 @@ public class CommandRouter {
                     "REFTOG:" + item.getId() + ":" + !item.isActive()});
         }
         options.add(new String[]{"+ Добавить значение", "REFADD:" + category.name()});
+        sender.send(chatId, sb.toString(), Keyboards.singleColumn(options));
+    }
+
+    /** ТЗ п.5.1/9 — управление пользователями из чата, а не только через Mini App (которая
+     *  сейчас недоступна без домена/HTTPS). MASTER здесь намеренно не создаётся — ему ещё нужен
+     *  отдельный профиль мастера (тип/размер выплаты), для которого в чате пока нет формы;
+     *  роль MASTER заводится через Mini App или напрямую через REST API. */
+    public void sendUsersList(long chatId, AuthenticatedActor actor) {
+        List<User> users = userManagementService.list(actor);
+        StringBuilder sb = new StringBuilder("Пользователи:\n");
+        List<String[]> options = new ArrayList<>();
+        for (User u : users) {
+            sb.append("%s%s — %s, tg:%d%s\n".formatted(u.isActive() ? "🟢 " : "⚪ ", u.getName(), u.getRole(),
+                    u.getTelegramUserId(), u.getPhone() != null ? ", " + u.getPhone() : ""));
+            options.add(new String[]{(u.isActive() ? "Деактивировать: " : "Активировать: ") + u.getName(),
+                    "USERTOG:" + u.getId() + ":" + !u.isActive()});
+        }
+        options.add(new String[]{"+ Добавить пользователя", "USERADD"});
         sender.send(chatId, sb.toString(), Keyboards.singleColumn(options));
     }
 
