@@ -123,7 +123,7 @@ public class UpdateDispatcher {
 
         Optional<ConversationState> active = conversations.findActive(chatId);
         if (active.isEmpty()) {
-            commandRouter.sendMainMenu(chatId, actor);
+            commandRouter.sendMainMenu(chatId, null, actor);
             return;
         }
         ConversationState state = active.get();

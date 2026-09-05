@@ -67,70 +67,74 @@ public class MiscWizards {
     private final OrderPresenter presenter;
     private final BotSender sender;
 
-    // --- Запуск сценариев (из CallbackRouter) ---
+    // --- Запуск сценариев (из CallbackRouter) --- editMessageId — сообщение с нажатой кнопкой,
+    // которое привело к старту сценария: правим его на месте первым же приглашением визарда вместо
+    // отправки нового сообщения (см. BotSender.editOrSend). Дальнейшие шаги внутри самого визарда
+    // по-прежнему идут отдельными сообщениями — сворачивать весь диалог в одно бесконечно
+    // редактируемое сообщение не стали, чтобы не терять в чате историю уже введённых ответов.
 
-    public void startDeclineReason(UUID orderId, long chatId, long telegramUserId) {
+    public void startDeclineReason(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, DECLINE_REASON, "REASON", orderId);
-        sender.send(chatId, "Причина отказа:", reasonKeyboard(catalog.getMasterDeclineReasons(), "DR"));
+        sender.editOrSend(chatId, editMessageId, "Причина отказа:", reasonKeyboard(catalog.getMasterDeclineReasons(), "DR"));
     }
 
-    public void startPriceDeclineReason(UUID orderId, long chatId, long telegramUserId) {
+    public void startPriceDeclineReason(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, PRICE_DECLINE_REASON, "REASON", orderId);
-        sender.send(chatId, "Причина отказа клиента:", reasonKeyboard(catalog.getCustomerCancelReasons(), "PR"));
+        sender.editOrSend(chatId, editMessageId, "Причина отказа клиента:", reasonKeyboard(catalog.getCustomerCancelReasons(), "PR"));
     }
 
-    public void startWaitingPart(UUID orderId, long chatId, long telegramUserId) {
+    public void startWaitingPart(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, WAITING_PART, "PART_NAME", orderId);
-        sender.send(chatId, "Название детали:");
+        sender.editOrSend(chatId, editMessageId, "Название детали:");
     }
 
-    public void startReschedule(UUID orderId, long chatId, long telegramUserId) {
+    public void startReschedule(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, RESCHEDULE, "DATE", orderId);
-        sender.send(chatId, "Новая дата (ДД.ММ.ГГГГ):");
+        sender.editOrSend(chatId, editMessageId, "Новая дата (ДД.ММ.ГГГГ):");
     }
 
-    public void startCancel(UUID orderId, long chatId, long telegramUserId) {
+    public void startCancel(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, CANCEL_REASON, "REASON", orderId);
-        sender.send(chatId, "Причина отмены заказа:");
+        sender.editOrSend(chatId, editMessageId, "Причина отмены заказа:");
     }
 
-    public void startUnrepairable(UUID orderId, long chatId, long telegramUserId) {
+    public void startUnrepairable(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, UNREPAIRABLE_REASON, "REASON", orderId);
-        sender.send(chatId, "Почему ремонт нецелесообразен:");
+        sender.editOrSend(chatId, editMessageId, "Почему ремонт нецелесообразен:");
     }
 
-    public void startWarranty(UUID orderId, long chatId, long telegramUserId) {
+    public void startWarranty(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, WARRANTY, "PROBLEM", orderId);
-        sender.send(chatId, "Опишите проблему по гарантии:");
+        sender.editOrSend(chatId, editMessageId, "Опишите проблему по гарантии:");
     }
 
-    public void startMedia(UUID orderId, long chatId, long telegramUserId) {
+    public void startMedia(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, MEDIA, "STAGE", orderId);
-        sender.send(chatId, "Этап съёмки:", stageKeyboard());
+        sender.editOrSend(chatId, editMessageId, "Этап съёмки:", stageKeyboard());
     }
 
-    public void startPriceApprovalInput(UUID orderId, long chatId, long telegramUserId) {
+    public void startPriceApprovalInput(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, PRICE_APPROVAL_INPUT, "FAILURE_REASON", orderId);
-        sender.send(chatId, "Причина неисправности:");
+        sender.editOrSend(chatId, editMessageId, "Причина неисправности:");
     }
 
-    public void startSearch(long chatId, long telegramUserId) {
+    public void startSearch(long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, SEARCH, "QUERY", null);
-        sender.send(chatId, "Введите номер заказа / телефон / имя / адрес:");
+        sender.editOrSend(chatId, editMessageId, "Введите номер заказа / телефон / имя / адрес:");
     }
 
-    public void startReferenceAdd(ReferenceCategory category, long chatId, long telegramUserId) {
+    public void startReferenceAdd(ReferenceCategory category, long chatId, long telegramUserId, Integer editMessageId) {
         ConversationState state = conversations.start(chatId, telegramUserId, REFERENCE_ADD, "VALUE", null);
         Map<String, String> draft = new java.util.HashMap<>();
         draft.put("category", category.name());
         conversations.update(state, "VALUE", draft);
-        sender.send(chatId, "Новое значение для «%s»:".formatted(category.label()));
+        sender.editOrSend(chatId, editMessageId, "Новое значение для «%s»:".formatted(category.label()));
     }
 
     /** MASTER здесь не предлагается — см. комментарий в CommandRouter.sendUsersList. */
-    public void startUserAdd(long chatId, long telegramUserId) {
+    public void startUserAdd(long chatId, long telegramUserId, Integer editMessageId) {
         conversations.start(chatId, telegramUserId, USER_ADD, "TELEGRAM_ID", null);
-        sender.send(chatId, "Telegram user id нового пользователя (узнать можно у @userinfobot):");
+        sender.editOrSend(chatId, editMessageId, "Telegram user id нового пользователя (узнать можно у @userinfobot):");
     }
 
     // --- Обработка ---

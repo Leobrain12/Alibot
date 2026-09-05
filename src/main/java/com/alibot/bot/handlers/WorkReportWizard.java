@@ -33,9 +33,9 @@ public class WorkReportWizard {
     private final MediaService mediaService;
     private final BotSender sender;
 
-    public void start(UUID orderId, long chatId, long telegramUserId) {
+    public void start(UUID orderId, long chatId, long telegramUserId, Integer editMessageId) {
         ConversationState state = conversations.start(chatId, telegramUserId, SCENARIO, "DESCRIPTION", orderId);
-        sender.send(chatId, "Опишите, что было сделано:");
+        sender.editOrSend(chatId, editMessageId, "Опишите, что было сделано:");
     }
 
     public void handleText(ConversationState state, String text, AuthenticatedActor actor) {

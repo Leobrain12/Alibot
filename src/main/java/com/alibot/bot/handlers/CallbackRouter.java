@@ -67,14 +67,17 @@ public class CallbackRouter {
     private static final Set<String> STANDALONE_ORDER_ACTIONS = Set.of(
             "ACC", "DEC", "OTW", "ARR", "DIAG", "DGR", "PRICE_OK", "PRICE_NO", "NC", "NCOK",
             "RESCH", "RPV", "MED", "REPORT", "CHM", "ASSIGN", "CANCELORD", "WARR", "PAYFULL", "ORDER",
-            "MENU_NEW_ORDER", "MENU_ACTIVE", "MENU_UNASSIGNED", "MENU_LEADS", "MENU_HISTORY", "MENU_STATS",
-            "MENU_MASTERS", "MENU_SEARCH", "STATS", "MENU_REFERENCE", "REFCAT", "REFTOG", "REFADD",
+            "MENU_MAIN", "MENU_NEW_ORDER", "MENU_ACTIVE", "MENU_UNASSIGNED", "MENU_LEADS", "MENU_HISTORY",
+            "MENU_STATS", "MENU_MASTERS", "MENU_SEARCH", "STATS", "MENU_REFERENCE", "REFCAT", "REFTOG", "REFADD",
             "MENU_USERS", "USERTOG", "USERADD");
 
     public void handle(CallbackQuery cq, AuthenticatedActor actor) {
         long chatId = cq.getMessage().getChatId();
         long telegramUserId = cq.getFrom().getId();
         String data = cq.getData();
+        // Сообщение с нажатой кнопкой — его правим на месте вместо отправки нового (см.
+        // BotSender.editOrSend), чтобы навигация по меню/спискам не копилась в чате.
+        Integer messageId = cq.getMessage().getMessageId();
         sender.answerCallback(cq.getId(), "");
 
         boolean looksLikeStandaloneAction = STANDALONE_ORDER_ACTIONS.contains(data.split(":")[0]);
@@ -103,116 +106,118 @@ public class CallbackRouter {
         String action = parts[0];
 
         switch (action) {
-            case "ACC" -> act(parts[1], chatId, actor, id -> orderService.acceptByMaster(id, actor));
-            case "DEC" -> miscWizards.startDeclineReason(UUID.fromString(parts[1]), chatId, telegramUserId);
-            case "OTW" -> act(parts[1], chatId, actor, id -> orderService.markOnTheWay(id, actor));
-            case "ARR" -> act(parts[1], chatId, actor, id -> orderService.markArrived(id, actor));
-            case "DIAG" -> act(parts[1], chatId, actor, id -> orderService.startDiagnostics(id, actor));
-            case "DGR" -> handleDiagnosisResult(parts, chatId, telegramUserId, actor);
-            case "PRICE_OK" -> act(parts[1], chatId, actor, id -> orderService.approvePriceByCustomer(id, actor));
-            case "PRICE_NO" -> miscWizards.startPriceDeclineReason(UUID.fromString(parts[1]), chatId, telegramUserId);
+            case "ACC" -> act(parts[1], chatId, messageId, actor, id -> orderService.acceptByMaster(id, actor));
+            case "DEC" -> miscWizards.startDeclineReason(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
+            case "OTW" -> act(parts[1], chatId, messageId, actor, id -> orderService.markOnTheWay(id, actor));
+            case "ARR" -> act(parts[1], chatId, messageId, actor, id -> orderService.markArrived(id, actor));
+            case "DIAG" -> act(parts[1], chatId, messageId, actor, id -> orderService.startDiagnostics(id, actor));
+            case "DGR" -> handleDiagnosisResult(parts, chatId, telegramUserId, messageId, actor);
+            case "PRICE_OK" -> act(parts[1], chatId, messageId, actor, id -> orderService.approvePriceByCustomer(id, actor));
+            case "PRICE_NO" -> miscWizards.startPriceDeclineReason(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
             case "NC" -> {
                 contactAttemptService.recordAttempt(UUID.fromString(parts[1]), ContactResult.NO_ANSWER, null, actor);
-                sender.send(chatId, "Недозвон зафиксирован.");
+                sender.editOrSend(chatId, messageId, "Недозвон зафиксирован.");
             }
-            case "NCOK" -> act(parts[1], chatId, actor, id -> orderService.transitionSimple(id, OrderStatus.ACCEPTED, actor, "Связь восстановлена"));
-            case "RESCH" -> miscWizards.startReschedule(UUID.fromString(parts[1]), chatId, telegramUserId);
-            case "RPV" -> act(parts[1], chatId, actor, id -> orderService.transitionSimple(id, OrderStatus.ON_THE_WAY, actor, "Деталь получена, повторный визит"));
-            case "MED" -> miscWizards.startMedia(UUID.fromString(parts[1]), chatId, telegramUserId);
-            case "REPORT" -> workReportWizard.start(UUID.fromString(parts[1]), chatId, telegramUserId);
-            case "CHM" -> showMasterPicker(UUID.fromString(parts[1]), chatId, actor);
+            case "NCOK" -> act(parts[1], chatId, messageId, actor, id -> orderService.transitionSimple(id, OrderStatus.ACCEPTED, actor, "Связь восстановлена"));
+            case "RESCH" -> miscWizards.startReschedule(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
+            case "RPV" -> act(parts[1], chatId, messageId, actor, id -> orderService.transitionSimple(id, OrderStatus.ON_THE_WAY, actor, "Деталь получена, повторный визит"));
+            case "MED" -> miscWizards.startMedia(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
+            case "REPORT" -> workReportWizard.start(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
+            case "CHM" -> showMasterPicker(UUID.fromString(parts[1]), chatId, messageId, actor);
             case "ASSIGN" -> {
                 Order updated = orderService.changeMaster(UUID.fromString(parts[1]), UUID.fromString(parts[2]), actor);
-                renderOrder(chatId, updated, actor);
+                renderOrder(chatId, messageId, updated, actor);
             }
-            case "CANCELORD" -> miscWizards.startCancel(UUID.fromString(parts[1]), chatId, telegramUserId);
-            case "WARR" -> miscWizards.startWarranty(UUID.fromString(parts[1]), chatId, telegramUserId);
+            case "CANCELORD" -> miscWizards.startCancel(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
+            case "WARR" -> miscWizards.startWarranty(UUID.fromString(parts[1]), chatId, telegramUserId, messageId);
             case "PAYFULL" -> {
                 paymentService.payFull(UUID.fromString(parts[1]), actor);
-                sender.send(chatId, "Оплата зафиксирована.");
+                sender.editOrSend(chatId, messageId, "Оплата зафиксирована.");
             }
             case "ORDER" -> {
                 Order order = orderService.getById(UUID.fromString(parts[1]), actor);
-                renderOrder(chatId, order, actor);
+                renderOrder(chatId, messageId, order, actor);
             }
             case "MENU_NEW_ORDER" -> {
                 // Тот же guard, что и у команды /new_order (CommandRouter) — раньше здесь его
                 // не было вовсе, и не-админ мог пройти весь 12-шаговый визард и получить отказ
                 // только на самом последнем шаге, в OrderService.create().
                 if (!actor.isAdmin()) {
-                    sender.send(chatId, "Действие доступно только администратору.");
+                    sender.editOrSend(chatId, messageId, "Действие доступно только администратору.");
                 } else {
-                    createOrderWizard.start(chatId, telegramUserId);
+                    createOrderWizard.start(chatId, telegramUserId, messageId);
                 }
             }
-            case "MENU_ACTIVE" -> commandRouter.sendActiveList(chatId, actor);
-            case "MENU_UNASSIGNED" -> commandRouter.sendUnassignedList(chatId, actor);
-            case "MENU_LEADS" -> commandRouter.sendLeadsList(chatId, actor);
-            case "MENU_HISTORY" -> commandRouter.sendHistoryList(chatId, actor);
-            case "MENU_STATS" -> commandRouter.sendStats(chatId, actor);
-            case "STATS" -> commandRouter.sendStats(chatId, actor, parts[1]);
-            case "MENU_MASTERS" -> sendMastersList(chatId, actor);
-            case "MENU_SEARCH" -> miscWizards.startSearch(chatId, telegramUserId);
-            case "MENU_REFERENCE" -> commandRouter.sendReferenceCategories(chatId, actor);
-            case "REFCAT" -> commandRouter.sendReferenceItems(chatId, ReferenceCategory.valueOf(parts[1]), actor);
+            case "MENU_MAIN" -> commandRouter.sendMainMenu(chatId, messageId, actor);
+            case "MENU_ACTIVE" -> commandRouter.sendActiveList(chatId, messageId, actor);
+            case "MENU_UNASSIGNED" -> commandRouter.sendUnassignedList(chatId, messageId, actor);
+            case "MENU_LEADS" -> commandRouter.sendLeadsList(chatId, messageId, actor);
+            case "MENU_HISTORY" -> commandRouter.sendHistoryList(chatId, messageId, actor);
+            case "MENU_STATS" -> commandRouter.sendStats(chatId, messageId, actor);
+            case "STATS" -> commandRouter.sendStats(chatId, messageId, actor, parts[1]);
+            case "MENU_MASTERS" -> sendMastersList(chatId, messageId, actor);
+            case "MENU_SEARCH" -> miscWizards.startSearch(chatId, telegramUserId, messageId);
+            case "MENU_REFERENCE" -> commandRouter.sendReferenceCategories(chatId, messageId, actor);
+            case "REFCAT" -> commandRouter.sendReferenceItems(chatId, messageId, ReferenceCategory.valueOf(parts[1]), actor);
             case "REFTOG" -> {
                 ReferenceItem updated = referenceDataService.update(
                         UUID.fromString(parts[1]), null, Boolean.parseBoolean(parts[2]), null, actor);
-                commandRouter.sendReferenceItems(chatId, updated.getCategory(), actor);
+                commandRouter.sendReferenceItems(chatId, messageId, updated.getCategory(), actor);
             }
-            case "REFADD" -> miscWizards.startReferenceAdd(ReferenceCategory.valueOf(parts[1]), chatId, telegramUserId);
-            case "MENU_USERS" -> commandRouter.sendUsersList(chatId, actor);
+            case "REFADD" -> miscWizards.startReferenceAdd(ReferenceCategory.valueOf(parts[1]), chatId, telegramUserId, messageId);
+            case "MENU_USERS" -> commandRouter.sendUsersList(chatId, messageId, actor);
             case "USERTOG" -> {
                 userManagementService.setActive(UUID.fromString(parts[1]), Boolean.parseBoolean(parts[2]), actor);
-                commandRouter.sendUsersList(chatId, actor);
+                commandRouter.sendUsersList(chatId, messageId, actor);
             }
-            case "USERADD" -> miscWizards.startUserAdd(chatId, telegramUserId);
-            default -> sender.send(chatId, "Действие не распознано.");
+            case "USERADD" -> miscWizards.startUserAdd(chatId, telegramUserId, messageId);
+            default -> sender.editOrSend(chatId, messageId, "Действие не распознано.");
         }
     }
 
-    private void handleDiagnosisResult(String[] parts, long chatId, long telegramUserId, AuthenticatedActor actor) {
+    private void handleDiagnosisResult(String[] parts, long chatId, long telegramUserId, Integer messageId, AuthenticatedActor actor) {
         UUID orderId = UUID.fromString(parts[1]);
         String outcome = parts[2];
         switch (outcome) {
-            case "REPAIR" -> miscWizards.startPriceApprovalInput(orderId, chatId, telegramUserId);
-            case "PART" -> miscWizards.startWaitingPart(orderId, chatId, telegramUserId);
-            case "UNREP" -> miscWizards.startUnrepairable(orderId, chatId, telegramUserId);
-            case "CANCEL" -> miscWizards.startPriceDeclineReason(orderId, chatId, telegramUserId);
+            case "REPAIR" -> miscWizards.startPriceApprovalInput(orderId, chatId, telegramUserId, messageId);
+            case "PART" -> miscWizards.startWaitingPart(orderId, chatId, telegramUserId, messageId);
+            case "UNREP" -> miscWizards.startUnrepairable(orderId, chatId, telegramUserId, messageId);
+            case "CANCEL" -> miscWizards.startPriceDeclineReason(orderId, chatId, telegramUserId, messageId);
             default -> { }
         }
     }
 
-    private void showMasterPicker(UUID orderId, long chatId, AuthenticatedActor actor) {
+    private void showMasterPicker(UUID orderId, long chatId, Integer messageId, AuthenticatedActor actor) {
         Order order = orderService.getById(orderId, actor);
         List<Master> suitable = masterService.findSuitable(order.getApplianceType(), order.getBrand(), null, actor);
         List<String[]> options = new ArrayList<>();
         for (Master m : suitable) {
             options.add(new String[]{m.getName(), "ASSIGN:" + orderId + ":" + m.getId()});
         }
-        sender.send(chatId, "Выберите мастера:", Keyboards.singleColumn(options));
+        sender.editOrSend(chatId, messageId, "Выберите мастера:",
+                Keyboards.withBack(Keyboards.singleColumn(options), "ORDER:" + orderId));
     }
 
-    private void sendMastersList(long chatId, AuthenticatedActor actor) {
+    private void sendMastersList(long chatId, Integer messageId, AuthenticatedActor actor) {
         List<Master> masters = masterService.list(actor);
         StringBuilder sb = new StringBuilder("Мастера:\n");
         for (Master m : masters) {
             sb.append("%s — %s, сегодня: %s\n".formatted(m.getName(), m.getStatus(),
                     m.isActive() ? "активен" : "неактивен"));
         }
-        sender.send(chatId, sb.toString());
+        sender.editOrSend(chatId, messageId, sb.toString(), Keyboards.withBack(Keyboards.of(), "MENU_MAIN"));
     }
 
-    private void renderOrder(long chatId, Order order, AuthenticatedActor actor) {
-        sender.send(chatId, presenter.renderCard(order), presenter.actionsFor(order, actor));
+    private void renderOrder(long chatId, Integer messageId, Order order, AuthenticatedActor actor) {
+        sender.editOrSend(chatId, messageId, presenter.renderCard(order), presenter.actionsFor(order, actor));
     }
 
     private interface OrderAction {
         Order apply(UUID orderId);
     }
 
-    private void act(String orderIdStr, long chatId, AuthenticatedActor actor, OrderAction action) {
+    private void act(String orderIdStr, long chatId, Integer messageId, AuthenticatedActor actor, OrderAction action) {
         Order updated = action.apply(UUID.fromString(orderIdStr));
-        renderOrder(chatId, updated, actor);
+        renderOrder(chatId, messageId, updated, actor);
     }
 }

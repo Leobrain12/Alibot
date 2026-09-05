@@ -42,9 +42,12 @@ public class CreateOrderWizard {
     private final OrderService orderService;
     private final BotSender sender;
 
-    public void start(long chatId, long telegramUserId) {
+    /** editMessageId — сообщение с нажатой кнопкой (например MENU_NEW_ORDER), которое правим на
+     *  месте первым шагом визарда вместо отправки нового; null, если визард запущен не по кнопке
+     *  (команда /new_order — тогда просто шлём новое сообщение). */
+    public void start(long chatId, long telegramUserId, Integer editMessageId) {
         ConversationState state = conversations.start(chatId, telegramUserId, SCENARIO, "APPLIANCE_TYPE", null);
-        sender.send(chatId, "Шаг 1 из 12. Тип техники:", applianceKeyboard());
+        sender.editOrSend(chatId, editMessageId, "Шаг 1 из 12. Тип техники:", applianceKeyboard());
     }
 
     public void handleCallback(ConversationState state, String data, AuthenticatedActor actor) {

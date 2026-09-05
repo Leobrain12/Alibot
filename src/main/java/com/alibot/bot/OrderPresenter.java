@@ -87,6 +87,7 @@ public class OrderPresenter {
             rows.add(row(bt("Гарантийное обращение", "WARR:" + id)));
         }
 
+        rows.add(row(bt("◀ Назад", "MENU_MAIN")));
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 

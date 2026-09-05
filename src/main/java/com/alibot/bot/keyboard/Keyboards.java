@@ -49,6 +49,14 @@ public final class Keyboards {
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
+    /** Добавляет строку "◀ Назад" под уже собранной клавиатурой — единообразная навигация назад
+     *  на каждой "странице" бота (меню/списки/справочники), без ручного повторения в каждом месте. */
+    public static InlineKeyboardMarkup withBack(InlineKeyboardMarkup menu, String backCallbackData) {
+        List<InlineKeyboardRow> rows = new ArrayList<>(menu.getKeyboard());
+        rows.add(new InlineKeyboardRow(button("◀ Назад", backCallbackData)));
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
     public static InlineKeyboardMarkup of(String... textDataPairs) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
         for (int i = 0; i < textDataPairs.length; i += 2) {

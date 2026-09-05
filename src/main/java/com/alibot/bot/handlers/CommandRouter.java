@@ -43,22 +43,27 @@ public class CommandRouter {
     public void handle(String command, long chatId, long telegramUserId, AuthenticatedActor actor) {
         String cmd = command.split("\\s")[0].split("@")[0];
         switch (cmd) {
-            case "/start" -> sendMainMenu(chatId, actor);
+            // Команда — не нажатие кнопки, редактировать нечего, поэтому editMessageId=null
+            // (обычная отправка нового сообщения) во всех ветках ниже.
+            case "/start" -> sendMainMenu(chatId, null, actor);
             case "/new_order" -> {
                 if (!actor.isAdmin()) {
                     sender.send(chatId, "Команда доступна только администратору.");
                     return;
                 }
-                createOrderWizard.start(chatId, telegramUserId);
+                createOrderWizard.start(chatId, telegramUserId, null);
             }
-            case "/stats" -> sendStats(chatId, actor);
+            case "/stats" -> sendStats(chatId, null, actor);
             case "/help" -> sender.send(chatId, "Основная работа — через кнопки. /new_order — создать заявку, "
                     + "/stats — статистика.");
             default -> sender.send(chatId, "Неизвестная команда. /help — список команд.");
         }
     }
 
-    public void sendMainMenu(long chatId, AuthenticatedActor actor) {
+    /** editMessageId — id сообщения с кнопкой, которое привело на эту "страницу" (правим его на
+     *  месте вместо отправки нового, чтобы навигация по меню не копилась в чате отдельными
+     *  сообщениями), либо null, если страница открыта не по кнопке (например /start). */
+    public void sendMainMenu(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         InlineKeyboardMarkup menu;
         if (actor.isAdmin()) {
             List<String[]> rows = new ArrayList<>(List.of(
@@ -83,7 +88,7 @@ public class CommandRouter {
                     "Моя статистика", "MENU_STATS");
         }
         menu = withMiniAppRow(menu);
-        sender.send(chatId, actor.isAdmin() ? "Меню администратора:" : "Меню мастера:", menu);
+        sender.editOrSend(chatId, editMessageId, actor.isAdmin() ? "Меню администратора:" : "Меню мастера:", menu);
     }
 
     /** Добавляет кнопку открытия Mini App первой строкой, если задан app.mini-app.base-url
@@ -99,48 +104,54 @@ public class CommandRouter {
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
-    public void sendActiveList(long chatId, AuthenticatedActor actor) {
+    /** Список заказов — это N отдельных карточек с собственными кнопками действий, а не одна
+     *  "страница", поэтому в одно отредактированное сообщение не сворачивается: правим само меню,
+     *  из которого сюда пришли (чтобы оно не оставалось висеть), а карточки шлём новыми
+     *  сообщениями, как и раньше. */
+    public void sendActiveList(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<Order> orders = orderService.listActive(actor);
         if (orders.isEmpty()) {
-            sender.send(chatId, "Активных заказов нет.");
+            sender.editOrSend(chatId, editMessageId, "Активных заказов нет.", backTo("MENU_MAIN"));
             return;
         }
+        sender.editOrSend(chatId, editMessageId, "Активные заказы:", backTo("MENU_MAIN"));
         for (Order order : orders) {
             sender.send(chatId, presenter.renderCard(order), presenter.actionsFor(order, actor));
         }
     }
 
-    public void sendHistoryList(long chatId, AuthenticatedActor actor) {
+    public void sendHistoryList(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<Order> orders = orderService.listHistory(actor);
         if (orders.isEmpty()) {
-            sender.send(chatId, "История пуста.");
+            sender.editOrSend(chatId, editMessageId, "История пуста.", backTo("MENU_MAIN"));
             return;
         }
         StringBuilder sb = new StringBuilder("История заказов:\n");
         for (Order order : orders) {
             sb.append("#%d — %s (%s)\n".formatted(order.getNumber(), order.getStatus(), order.getVisitDate()));
         }
-        sender.send(chatId, sb.toString());
+        sender.editOrSend(chatId, editMessageId, sb.toString(), backTo("MENU_MAIN"));
     }
 
-    public void sendUnassignedList(long chatId, AuthenticatedActor actor) {
+    public void sendUnassignedList(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<Order> orders = orderService.listUnassigned(actor);
         if (orders.isEmpty()) {
-            sender.send(chatId, "Нераспределённых заказов нет.");
+            sender.editOrSend(chatId, editMessageId, "Нераспределённых заказов нет.", backTo("MENU_MAIN"));
             return;
         }
+        sender.editOrSend(chatId, editMessageId, "Нераспределённые заказы:", backTo("MENU_MAIN"));
         for (Order order : orders) {
-            sender.send(chatId, presenter.renderCard(order), Keyboards.of(
-                    "Назначить мастера", "CHM:" + order.getId()));
+            sender.send(chatId, presenter.renderCard(order), Keyboards.withBack(
+                    Keyboards.of("Назначить мастера", "CHM:" + order.getId()), "MENU_MAIN"));
         }
     }
 
     /** ТЗ п.10-11 — обработка лида (дозаполнение полей заказа, конвертация) требует полноценной
      *  формы, которой в чате нет — здесь только список-уведомление, сама работа с лидом в Mini App. */
-    public void sendLeadsList(long chatId, AuthenticatedActor actor) {
+    public void sendLeadsList(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<com.alibot.domain.Lead> leads = leadService.listPending(actor);
         if (leads.isEmpty()) {
-            sender.send(chatId, "Необработанных лидов нет.");
+            sender.editOrSend(chatId, editMessageId, "Необработанных лидов нет.", backTo("MENU_MAIN"));
             return;
         }
         StringBuilder sb = new StringBuilder("Необработанные лиды (%d):\n".formatted(leads.size()));
@@ -149,23 +160,28 @@ public class CommandRouter {
                     lead.getSource() != null ? " (" + lead.getSource() + ")" : ""));
         }
         sb.append("\nОбработать (конвертировать в заявку или отклонить) — в Mini App, раздел «Лиды».");
-        sender.send(chatId, sb.toString());
+        sender.editOrSend(chatId, editMessageId, sb.toString(), backTo("MENU_MAIN"));
+    }
+
+    /** Клавиатура из одной кнопки "◀ Назад" — для страниц, у которых кроме неё нет других кнопок. */
+    private InlineKeyboardMarkup backTo(String callbackData) {
+        return Keyboards.withBack(Keyboards.of(), callbackData);
     }
 
     /** ТЗ п.132 — то же управление справочниками, что в Mini App (SUPERADMIN), но в чате: список
      *  категорий → значения категории с переключением активности и добавлением новых.
      *  Проверка роли не дублируется здесь — её делает ReferenceDataService.listAll(). */
-    public void sendReferenceCategories(long chatId, AuthenticatedActor actor) {
+    public void sendReferenceCategories(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<ReferenceItem> all = referenceDataService.listAll(actor);
         List<String[]> options = new ArrayList<>();
         for (ReferenceCategory category : ReferenceCategory.values()) {
             long count = all.stream().filter(i -> i.getCategory() == category).count();
             options.add(new String[]{"%s (%d)".formatted(category.label(), count), "REFCAT:" + category.name()});
         }
-        sender.send(chatId, "Справочники:", Keyboards.singleColumn(options));
+        sender.editOrSend(chatId, editMessageId, "Справочники:", Keyboards.withBack(Keyboards.singleColumn(options), "MENU_MAIN"));
     }
 
-    public void sendReferenceItems(long chatId, ReferenceCategory category, AuthenticatedActor actor) {
+    public void sendReferenceItems(long chatId, Integer editMessageId, ReferenceCategory category, AuthenticatedActor actor) {
         List<ReferenceItem> items = referenceDataService.listAll(actor).stream()
                 .filter(i -> i.getCategory() == category)
                 .toList();
@@ -180,14 +196,15 @@ public class CommandRouter {
                     "REFTOG:" + item.getId() + ":" + !item.isActive()});
         }
         options.add(new String[]{"+ Добавить значение", "REFADD:" + category.name()});
-        sender.send(chatId, sb.toString(), Keyboards.singleColumn(options));
+        sender.editOrSend(chatId, editMessageId, sb.toString(),
+                Keyboards.withBack(Keyboards.singleColumn(options), "MENU_REFERENCE"));
     }
 
     /** ТЗ п.5.1/9 — управление пользователями из чата, а не только через Mini App (которая
      *  сейчас недоступна без домена/HTTPS). MASTER здесь намеренно не создаётся — ему ещё нужен
      *  отдельный профиль мастера (тип/размер выплаты), для которого в чате пока нет формы;
      *  роль MASTER заводится через Mini App или напрямую через REST API. */
-    public void sendUsersList(long chatId, AuthenticatedActor actor) {
+    public void sendUsersList(long chatId, Integer editMessageId, AuthenticatedActor actor) {
         List<User> users = userManagementService.list(actor);
         StringBuilder sb = new StringBuilder("Пользователи:\n");
         List<String[]> options = new ArrayList<>();
@@ -198,17 +215,17 @@ public class CommandRouter {
                     "USERTOG:" + u.getId() + ":" + !u.isActive()});
         }
         options.add(new String[]{"+ Добавить пользователя", "USERADD"});
-        sender.send(chatId, sb.toString(), Keyboards.singleColumn(options));
+        sender.editOrSend(chatId, editMessageId, sb.toString(), Keyboards.withBack(Keyboards.singleColumn(options), "MENU_MAIN"));
     }
 
-    public void sendStats(long chatId, AuthenticatedActor actor) {
-        sendStats(chatId, actor, "TODAY");
+    public void sendStats(long chatId, Integer editMessageId, AuthenticatedActor actor) {
+        sendStats(chatId, editMessageId, actor, "TODAY");
     }
 
     /** ТЗ п.73/76 — выбор периода (сегодня / 7 дней / 30 дней) через кнопки под самим сообщением;
      *  произвольный диапазон API уже поддерживает (from/to) — здесь как чат-интерфейс годятся
      *  только пресеты, свободный ввод дат текстом хуже кнопок и уже есть в Mini App. */
-    public void sendStats(long chatId, AuthenticatedActor actor, String period) {
+    public void sendStats(long chatId, Integer editMessageId, AuthenticatedActor actor, String period) {
         Instant to = Instant.now();
         Instant from = switch (period) {
             case "7D" -> to.minus(7, ChronoUnit.DAYS);
@@ -220,14 +237,14 @@ public class CommandRouter {
             case "30D" -> "30 дней";
             default -> "сегодня";
         };
-        InlineKeyboardMarkup periodKeyboard = Keyboards.grid(List.of(
+        InlineKeyboardMarkup periodKeyboard = Keyboards.withBack(Keyboards.grid(List.of(
                 new String[]{"Сегодня", "STATS:TODAY"},
                 new String[]{"7 дней", "STATS:7D"},
-                new String[]{"30 дней", "STATS:30D"}), 3);
+                new String[]{"30 дней", "STATS:30D"}), 3), "MENU_MAIN");
 
         if (actor.isAdmin()) {
             var stats = statsService.overallStats(from, to, actor);
-            sender.send(chatId, """
+            sender.editOrSend(chatId, editMessageId, """
                     Итоги за %s
                     Новых заказов: %d
                     Выполнено: %d
@@ -241,7 +258,7 @@ public class CommandRouter {
                     periodKeyboard);
         } else {
             var stats = statsService.masterStats(actor.masterId(), from, to, actor);
-            sender.send(chatId, """
+            sender.editOrSend(chatId, editMessageId, """
                     Моя статистика за %s
                     Назначено: %d
                     Принято: %d
